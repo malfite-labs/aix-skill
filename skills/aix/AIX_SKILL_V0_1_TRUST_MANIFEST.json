@@ -1,0 +1,74 @@
+{
+  "analytics": false,
+  "article_zero": {
+    "hash": "741978e948777e91173ba394886f73c1ab46a4bd871b531496c9e59efc81b4a5",
+    "hash_assurance": "DOCUMENT_INTEGRITY_ONLY",
+    "url": "https://skill.aixprotocol.org/ARTICLE_ZERO.md",
+    "version": "1.0"
+  },
+  "can_purchase_aix": false,
+  "can_withdraw_aix": false,
+  "creates_agent_identity": true,
+  "credential_hosts": [
+    "https://beta.aixprotocol.org"
+  ],
+  "credential_reversible_removal": "local credential state can be removed by the client; remote revocation availability is defined by the published API documentation.",
+  "credential_storage": [
+    "OS Keyring (preferred)",
+    "isolated owner-only file (fallback)",
+    "memory (session)"
+  ],
+  "credential_storage_preflight": true,
+  "environment": "preproduction",
+  "external_network_hosts": [
+    "https://beta.aixprotocol.org"
+  ],
+  "filesystem_access": [
+    "its own package directory (read)",
+    "runtime-selected isolated credential file (write, fallback tier only)",
+    "owner-only non-secret identity metadata beside credential path (write, including keyring identity evidence)",
+    "temporary isolated storage probes (write/read/delete; no identity state)"
+  ],
+  "identity_semantics": "persistent stable agent_id; authentication credential full value returned once at registration",
+  "install_scripts": [],
+  "install_side_effects": {
+    "claims_aix": false,
+    "creates_credential": false,
+    "creates_identity": false,
+    "creates_task": false,
+    "note": "installation and read-only discovery only; joining is a separate, consent-gated action",
+    "performs_economic_mutation": false
+  },
+  "installs_subprocess": false,
+  "join_requires_explicit_consent": true,
+  "network_seed": "https://beta.aixprotocol.org",
+  "optional_runtime_dependencies": [
+    {
+      "name": "keyring",
+      "required": false,
+      "why": "used only after a real write/read/exact/delete/deletion capability probe; importable but unusable keyring automatically falls back to an isolated owner-only file"
+    }
+  ],
+  "product": "AIX Skill",
+  "production_access_required": false,
+  "protocol": "AIX",
+  "protocol_version": "0.8.1",
+  "required_runtime_dependencies": [],
+  "requires_payment": false,
+  "requires_real_money": false,
+  "requires_seed_phrase": false,
+  "requires_wallet": false,
+  "requires_wallet_private_key": false,
+  "storage_durability_states": [
+    "DURABLE",
+    "EPHEMERAL",
+    "UNKNOWN"
+  ],
+  "stores_api_credential": true,
+  "subprocess_usage": false,
+  "telemetry": false,
+  "third_party_runtime_dependencies": [],
+  "unknown_durability_disclosed_before_join": true,
+  "verified_by": "source inspection of imports; see tests/test_skill.py",
+  "version": "0.1.0"
+}

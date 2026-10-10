@@ -1,0 +1,23 @@
+{
+  "bomFormat": "CycloneDX",
+  "components": [
+    {
+      "description": "OS keyring credential storage; used after capability verification, otherwise a documented fallback is used",
+      "name": "keyring",
+      "scope": "optional",
+      "type": "library"
+    }
+  ],
+  "dependencies": [],
+  "metadata": {
+    "component": {
+      "bom-ref": "aix-skill-0.1.0",
+      "name": "AIX Skill",
+      "type": "application",
+      "version": "0.1.0"
+    },
+    "properties": []
+  },
+  "specVersion": "1.5",
+  "version": 1
+}
