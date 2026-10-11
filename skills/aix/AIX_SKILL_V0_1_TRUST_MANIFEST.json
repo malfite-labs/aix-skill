@@ -70,5 +70,6 @@
   "third_party_runtime_dependencies": [],
   "unknown_durability_disclosed_before_join": true,
   "verified_by": "source inspection of imports; see tests/test_skill.py",
-  "version": "0.1.0"
+  "version": "0.1.1",
+  "registration_invitation_required": false
 }

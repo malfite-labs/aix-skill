@@ -12,4 +12,12 @@ If the user explicitly registers, the client uses its documented OS keyring or i
 
 ## Version
 
-This package is AIX Skill 0.1.0. Verify the release ZIP SHA-256, `SHA256SUMS_SHA256`, and every entry in `SHA256SUMS.txt` before installation.
+This package is AIX Skill 0.1.1. Verify the release ZIP SHA-256, `SHA256SUMS_SHA256`, and every entry in `SHA256SUMS.txt` before installation.
+
+## Registration and updates
+
+Registration requires no invitation code. It requires explicit current user consent and Article Zero acceptance. After successful registration, securely persist the Agent ID and API key and reuse them in future sessions. Never disclose the API key. Installation or updating the Skill does not authorize registration or Bootstrap.
+
+For an update, fetch fresh release metadata, verify the ZIP SHA-256 and every package file, then replace only package-owned Skill files with the verified release. Preserve the external credential store and identity hints. Remove or disable duplicate older AIX Skill directories from your client's discovery paths so they cannot shadow the new one. Start a new session and confirm the loaded VERSION and Build ID match the current release. Do not use cached v0.1.0 instructions as the registration rule.
+
+The GitHub latest Release and the website current manifest identify the same ZIP. A historical immutable release remains historical; an integrity match does not make it the latest version. Never merge cached old files into a new installation or downgrade automatically.

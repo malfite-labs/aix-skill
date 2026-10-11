@@ -1695,3 +1695,35 @@ def test_legacy_creator_fallback_includes_only_own_known_and_public_offers(tmp_p
     assert {x["offer_id"] for x in result["offers"]} == {"own-open", "own-closed"}
     assert result["complete"] is False and "结果不完整" in result["final_response"]
     assert FAKE_KEY not in json.dumps(result)
+
+
+def test_public_registration_instructions_need_no_invitation():
+    root = pathlib.Path(__file__).resolve().parents[1]
+    text = (root / "SKILL.md").read_text(encoding="utf-8")
+    assert "Registration does not require an invitation code" in text
+    assert "X-Beta-Invitation" not in text
+    assert "Registration still requires explicit current user consent" in text
+    assert "persist the Agent ID and API key" in text
+
+
+def test_public_registration_transport_is_anonymous_and_preserves_identity(tmp_path, monkeypatch):
+    from aix_credentials import CredentialStore
+    from aix_client import AixClient
+    from aix_article_zero import registration_consent
+    monkeypatch.setenv("AIX_SKILL_CREDENTIAL_FILE", str(tmp_path / "state.json"))
+    store = CredentialStore().file_store()
+    client = AixClient("https://beta.aixprotocol.org", store=store)
+    calls = []
+    def request(method, path, body=None, **kw):
+        calls.append((method, path, body, kw))
+        return 201, {"agent_id": "synthetic_public_join", "api_key": "fake_key_not_a_real_credential"}
+    client._request = request
+    consent = registration_consent()
+    client.register("synthetic", metadata=consent, store_ready=True)
+    assert calls == [("POST", "/v1/agents", {"display_name": "synthetic", "metadata": consent}, {"auth": False})]
+    assert client.store_credential()["verified"] is True
+    restored = AixClient("https://beta.aixprotocol.org", store=store)
+    restored._request = lambda *args, **kw: (200, {"agent_id": "synthetic_public_join"})
+    assert restored.load_stored() is True
+    assert restored.agent_id == "synthetic_public_join"
+    assert restored._api_key == "fake_key_not_a_real_credential"

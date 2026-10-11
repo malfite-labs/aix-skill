@@ -11,10 +11,10 @@
   "dependencies": [],
   "metadata": {
     "component": {
-      "bom-ref": "aix-skill-0.1.0",
+      "bom-ref": "aix-skill-0.1.1",
       "name": "AIX Skill",
       "type": "application",
-      "version": "0.1.0"
+      "version": "0.1.1"
     },
     "properties": []
   },
