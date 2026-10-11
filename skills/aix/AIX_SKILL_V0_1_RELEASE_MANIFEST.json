@@ -5,7 +5,7 @@
     "url": "https://skill.aixprotocol.org/ARTICLE_ZERO.md",
     "version": "1.0"
   },
-  "build_id": "skill-0.1-28aef5859f23",
+  "build_id": "skill-0.1-281a7b5146bc",
   "dependency_summary": {
     "install_time_dependencies": [],
     "optional": [
@@ -26,7 +26,7 @@
     "README.md": "8a19c17bd43388b3e9ca6415dec4458e013859e8c0e263c5d5a67e04c9620988",
     "SBOM.json": "5f4161cfecf4acf78164dc4bc53491c38b25ad6c489674ad4cb5672ef3b9fc69",
     "SECURITY.md": "0e9fd2e2ecdf247c3f56f6cb8c07713dc0aa1493a0f3d6c988da652578169500",
-    "SKILL.md": "e5c543be6c7c2e4aa7103c84a88feb02df490339cc654bfabdcbddf193fd9c0b",
+    "SKILL.md": "48bf57918bc53f733f725ddd0a80c223ed7dc67c0d12ff54859060f772f1e20c",
     "VERSION": "80447316529fc62014fbaa047fb67c51ac30e32830cda370405349d8d66d196c",
     "aix_acceptance.py": "e664cdee98d21d3f34322cb411ba7f75cce144c52bb257f1e83531b23cd07016",
     "aix_article_zero.py": "2aea0861231b13ae024e58c1cf9c8976dfa2db0167939f04cdab4f387f1cd9f2",
@@ -40,7 +40,7 @@
     "tests/test_acceptance_modes.py": "2f68585356208396cc46e7ddbfab06b1565b4391e21984fd3c56970092ab9b65",
     "tests/test_article_zero.py": "2dc068f2b670b80518580c491af152eeebd5396c5542c253381fd98c73de4ca4",
     "tests/test_natural_hardening.py": "45b6e07673d611e48393644b4377d1ec276461e5d6b9096a7827f2cf824ea0f7",
-    "tests/test_reliability.py": "8f475e03da3f1d56c7d9c552b7118c5e25cdfb54488ebad6bdaf60c53b70d1d5",
+    "tests/test_reliability.py": "f8702373f10d349ef8898837c335a8aab90664d2fa340db7ecc2a4e4c18d47bc",
     "tests/test_skill.py": "2e5aada225064e4a2dae47aa084153b66bd06cdb0eeebdfa6e26e2468f694e5a",
     "tests/test_trusted_review.py": "4d845e89d0dd666632a7c393d73ad37bcd57e71f8185e1ac6b18e8f4cb630fe3",
     "welcome.txt": "6bb74ae00f618dfa4b3c9cf2daee763339f5d91d760d434267478905781446a8"
@@ -50,8 +50,8 @@
   "registration_invitation_required": false,
   "signing": "none; integrity is hash comparison against SHA256SUMS.txt",
   "skill_version": "0.1.1",
-  "source_commit": "3bc3c922bd701565bdb5cf168fa9cf4c522145e5",
-  "source_commit_date_utc": "2026-10-11T11:18:59+08:00",
+  "source_commit": "1e72c571fc9860984b59c5235ebe10e8b6ee4e1e",
+  "source_commit_date_utc": "2026-10-11T11:24:24+08:00",
   "source_scope": "skills/aix payload; generated integrity files excluded",
   "version": "0.1.1"
 }
