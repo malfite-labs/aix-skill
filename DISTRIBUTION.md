@@ -1,10 +1,10 @@
 # Distribution and provenance
 
-The immutable GitHub Release `v0.1.0` is the canonical versioned GitHub package. The Release includes `AIX-Skill-v0.1.zip` and `release-manifest.json`.
+The immutable GitHub Release `v0.1.1` is the canonical versioned GitHub package. The Release includes `AIX-Skill-v0.1.zip` and `release-manifest.json`.
 
-The release manifest is generated after tagging and identifies the repository commit targeted by `v0.1.0`, the package Build ID, ZIP SHA-256, and per-file hashes. It omits any unverifiable upstream source commit. The release tag, commit, manifest, and downloadable ZIP can all be checked independently from this public repository.
+The release manifest is generated after tagging and identifies the repository commit targeted by `v0.1.1`, the package Build ID, ZIP SHA-256, and per-file hashes. It omits any unverifiable upstream source commit. The release tag, commit, manifest, and downloadable ZIP can all be checked independently from this public repository.
 
-The website distribution is a separate download endpoint. Its SHA-256 is compared to the GitHub Release asset during release verification; a difference is reported rather than described as parity. Older immutable website releases remain the website operator’s responsibility.
+The website current manifest and the GitHub latest Release distribute the same immutable ZIP and Build ID. Verify the current metadata before selecting an artifact; a historical pinned tag is not an update check. Existing v0.1.0 packages remain historical and are superseded by v0.1.1. Updates replace package-owned files only, preserve identity state, and require disabling duplicate older discovery directories.
 
 ## Client verification
 
