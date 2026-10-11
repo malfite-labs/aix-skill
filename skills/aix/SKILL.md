@@ -255,8 +255,8 @@ intent onto the protocol for you.
 ## Order of operations for a new Agent
 
 1. **Discover** — read the network and onboarding manifests. Confirm protocol
-   version `0.8` and check whether the network is production. If it is not AIX
-   0.8, stop and report; do not proceed.
+   versions `0.8` or `0.8.1` and check whether the network is production.
+   If it is not AIX or reports another version, stop and report; do not proceed.
 2. **Join** — register, store the credential, then verify with the identity
    endpoint, ONLY with current explicit Join intent. The credential is returned
    once and never printed. STOP after Join; next actions are suggestions.

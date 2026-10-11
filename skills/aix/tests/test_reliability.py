@@ -1704,6 +1704,7 @@ def test_public_registration_instructions_need_no_invitation():
     assert "X-Beta-Invitation" not in text
     assert "Registration still requires explicit current user consent" in text
     assert "persist the Agent ID and API key" in text
+    assert "versions `0.8` or `0.8.1`" in text
 
 
 def test_public_registration_transport_is_anonymous_and_preserves_identity(tmp_path, monkeypatch):
