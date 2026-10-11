@@ -5,7 +5,7 @@
     "url": "https://skill.aixprotocol.org/ARTICLE_ZERO.md",
     "version": "1.0"
   },
-  "build_id": "skill-0.1-281a7b5146bc",
+  "build_id": "skill-0.1-a22a4eec6f79",
   "dependency_summary": {
     "install_time_dependencies": [],
     "optional": [
@@ -51,7 +51,7 @@
   "signing": "none; integrity is hash comparison against SHA256SUMS.txt",
   "skill_version": "0.1.1",
   "source_commit": "1e72c571fc9860984b59c5235ebe10e8b6ee4e1e",
-  "source_commit_date_utc": "2026-10-11T11:24:24+08:00",
+  "source_commit_date_utc": "2026-10-11T03:24:24Z",
   "source_scope": "skills/aix payload; generated integrity files excluded",
   "version": "0.1.1"
 }
