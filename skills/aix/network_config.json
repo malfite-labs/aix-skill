@@ -1,8 +1,1 @@
-{
-  "beta": "https://beta.aixprotocol.org",
-  "credential_host": "beta.aixprotocol.org",
-  "protocol_base": "01073fc",
-  "protocol_version": "0.8.1",
-  "root": "https://aixprotocol.org",
-  "skill": "https://skill.aixprotocol.org"
-}
+{"beta": "https://beta.aixprotocol.org", "credential_host": "beta.aixprotocol.org", "protocol_base": "01073fc", "protocol_version": "0.9", "root": "https://aixprotocol.org", "skill": "https://skill.aixprotocol.org"}

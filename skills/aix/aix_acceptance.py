@@ -38,8 +38,13 @@ def public_rules(rules):
             check.pop('salt', None)
     return result
 
+#: Words that ask for a Passkey-verified human instead of the default
+#: authenticated Creator decision. Passkey is opt-in, never forced.
+_STRONG_HUMAN_PROOF = ('passkey', 'webauthn', '真人验证', '指纹', '面容')
+
 def propose_policy(text, rules=()):
     text=text or ''
+    strong = any(word in text.lower() for word in _STRONG_HUMAN_PROOF)
     if any(word in text for word in ('失败时','失败后','复核','fallback','FALLBACK')):
         mode='FALLBACK'
     elif any(word in text for word in ('再由我','再人工','挑选','DUAL','dual')):
@@ -53,5 +58,7 @@ def propose_policy(text, rules=()):
             'override_rule_ids':[r['id'] for r in rules if r.get('required',True)] if mode=='FALLBACK' else [],
             'unknown_disposition':'WAIT','review_window_seconds':86400,
             'timeout_disposition':'REFUND','reviewer':'CREATOR',
-            'actor_assurance':'creator_authorized' if mode=='AUTO' else 'webauthn_user_verified',
+            # Default: the authenticated Creator decides (bound to contract and
+            # delivery hashes, exactly-once). A Passkey is used only on request.
+            'actor_assurance':'webauthn_user_verified' if strong and mode!='AUTO' else 'creator_authorized',
             'acceptance_criteria':[text.strip() or 'Creator 按公开任务要求审核交付']}

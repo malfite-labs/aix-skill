@@ -1,0 +1,9 @@
+{
+  "skill_version": "0.2.0",
+  "protocol_version": "0.9",
+  "protocol_source_commit": "9aac7788e4d9dd16828c995e8c50b8eba71d773c",
+  "build_id": "skill-0.2.0-9aac7788e4d9",
+  "package_sha256": "4a488d81774fdf080d3caabd1587b69dc16a4c05ceab585f65e0ee67fca2c603",
+  "package_url": "https://skill.aixprotocol.org/releases/skill-0.2.0-9aac7788e4d9/AIX-Skill-v0.2.0.zip",
+  "mirrored_package_files_only": true
+}

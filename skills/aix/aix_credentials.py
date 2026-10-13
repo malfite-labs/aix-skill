@@ -29,14 +29,44 @@ import stat
 import tempfile
 import uuid
 import copy
+import re
 from typing import Any
+
+def _durable_replace(src: str, dst: pathlib.Path) -> None:
+    """Atomic rename whose result survives a crash, as far as the OS allows.
+
+    POSIX: rename, then fsync the parent directory. Windows: MoveFileExW with
+    MOVEFILE_WRITE_THROUGH (returns after the move is flushed); a directory
+    cannot be fsynced there. Neither path has been power-loss tested.
+    """
+    if os.name == "nt":
+        import ctypes
+        from ctypes import wintypes
+        move = ctypes.WinDLL("kernel32", use_last_error=True).MoveFileExW
+        move.argtypes = (wintypes.LPCWSTR, wintypes.LPCWSTR, wintypes.DWORD)
+        move.restype = wintypes.BOOL
+        if not move(str(src), str(dst), 0x1 | 0x8):  # REPLACE_EXISTING | WRITE_THROUGH
+            raise ctypes.WinError(ctypes.get_last_error())
+        return
+    os.replace(src, dst)
+    try:
+        fd = os.open(str(pathlib.Path(dst).parent), os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+    except OSError:
+        return
+    try:
+        os.fsync(fd)
+    except OSError:
+        pass
+    finally:
+        os.close(fd)
+
 
 SERVICE = "aix-skill"
 REDACTED = "***redacted***"
 
 #: Substrings that mean a value is a credential and must never be rendered.
 _SECRET_MARKERS = ("api_key", "apikey", "authorization", "bearer", "credential",
-                   "secret", "password", "private_key")
+                   "secret", "password", "private_key", "token")
 
 
 def is_secret_field(name: str) -> bool:
@@ -58,6 +88,8 @@ def redact(value: Any, _depth: int = 0) -> Any:
         return [redact(v, _depth + 1) for v in value]
     if isinstance(value, str) and value.lower().startswith("bearer "):
         return f"Bearer {REDACTED}"
+    if isinstance(value, str):
+        return re.sub(r"aixreg_[A-Za-z0-9_-]+", REDACTED, value)
     return value
 
 
@@ -207,6 +239,38 @@ class CredentialStore:
         path = self._path or self._default_path()
         suffix = ".keyring.identity.json" if self.backend == "os_keyring" else ".identity.json"
         return path.with_name(path.name + suffix)
+
+    def collaboration_preference(self, agent_id, base_url, status=None):
+        """Non-secret ask-once UX state, separate from identity and credentials."""
+        key = json.dumps([self.profile, base_url, agent_id])
+        memory = getattr(self, '_collaboration_preferences', {})
+        path = (self._path or self._default_path()).with_name(
+            (self._path or self._default_path()).name + '.collaboration.json')
+        preferences = {}
+        if self.backend != 'memory':
+            try:
+                preferences = json.loads(path.read_text(encoding='utf-8'))
+                if not isinstance(preferences, dict):
+                    preferences = {}
+            except FileNotFoundError:
+                pass
+            except (OSError, ValueError):
+                # Unreadable prior preference is not permission to repeat a prompt.
+                return {'status': 'PREFERENCE_UNAVAILABLE'}
+        previous = preferences.get(key) or memory.get(key)
+        if status is None:
+            return {'status': previous or 'NOT_OFFERED'}
+        if status not in ('OFFERED','DECLINED','ENABLED'):
+            raise ValueError('invalid collaboration preference')
+        memory[key] = status
+        self._collaboration_preferences = memory
+        preferences[key] = status
+        if self.backend != 'memory':
+            try:
+                self._atomic_json(path, preferences)
+            except OSError:
+                return {'status': status, 'persistence': 'SESSION_ONLY'}
+        return {'status': status, 'persistence': 'SESSION_ONLY' if self.backend == 'memory' else 'SAVED'}
 
     def file_store(self) -> "CredentialStore":
         """A store guaranteed to use the isolated-file backend.
@@ -361,6 +425,64 @@ class CredentialStore:
                 raise ValueError("identity metadata corrupt")
             self._write_identity_hints(self._identity_hints() + [agent_id])
 
+    # -- registration retry token -------------------------------------------
+    # Saved BEFORE a registration request so that a lost response can be
+    # retried into the SAME identity. As sensitive as a key while it is live
+    # (it can re-issue one for 24h), so it gets the same protection: keyring
+    # when available, else an owner-only file beside the credential file.
+    _PENDING = "__aix_pending_registration__"
+
+    def _pending_path(self) -> pathlib.Path:
+        path = self._path or self._default_path()
+        return path.with_name(path.name + ".pending-registration.json")
+
+    # The token is bound to the node it was created for: replaying it to any
+    # other host would hand that host a way to re-issue the first node's key.
+    def save_pending_registration(self, token: str, base_url: str | None = None) -> None:
+        record = {"registration_token": token, "base_url": base_url}
+        if self._backend == "os_keyring":
+            self._keyring.set_password(self._account(), self._PENDING, json.dumps(record))
+        elif self._backend == "isolated_file":
+            self._atomic_json(self._pending_path(), record)
+        else:
+            self._memory_pending = record
+        if self.load_pending_registration(base_url) != token:
+            raise RuntimeError("pending registration token did not read back")
+
+    def load_pending_registration(self, base_url: str | None = None) -> str | None:
+        """The saved token for ``base_url``; None if absent, unreadable or for another node."""
+        try:
+            if self._backend == "os_keyring":
+                raw = self._keyring.get_password(self._account(), self._PENDING)
+                value = json.loads(raw) if raw else None
+            elif self._backend == "isolated_file":
+                path = self._pending_path()
+                value = json.loads(path.read_text(encoding="utf-8")) if path.exists() else None
+            else:
+                value = getattr(self, "_memory_pending", None)
+            if not isinstance(value, dict):
+                return None
+            token = value.get("registration_token")
+            if value.get("base_url") != base_url:
+                return None
+            return token if isinstance(token, str) and token else None
+        except Exception:  # noqa: BLE001 - absence and unreadability both mean "none"
+            return None
+
+    def clear_pending_registration(self) -> None:
+        if self._backend == "os_keyring":
+            try:
+                self._keyring.delete_password(self._account(), self._PENDING)
+            except Exception:  # noqa: BLE001
+                pass
+        elif self._backend == "isolated_file":
+            try:
+                self._pending_path().unlink()
+            except FileNotFoundError:
+                pass
+        else:
+            self._memory_pending = None
+
     def forget(self, agent_id: str) -> None:
         if self._backend == "os_keyring":
             self._keyring.delete_password(self._account(), agent_id)
@@ -403,7 +525,7 @@ class CredentialStore:
                 json.dump(data, fh)
                 fh.flush()
                 os.fsync(fh.fileno())
-            os.replace(name, path)
+            _durable_replace(name, path)
         finally:
             if os.path.exists(name):
                 os.unlink(name)

@@ -10,6 +10,7 @@ the protocol already knows who claimed what, and re-deriving that locally is how
 a client turns into a second source of truth.
 """
 from __future__ import annotations
+import re
 
 from typing import Any
 
@@ -19,7 +20,8 @@ INTENT_BOUNDARY = {
     "AUTONOMOUS_USER_INTENT_EXPANSION": "FORBIDDEN",
     "READ_IMPLIES_MUTATION": False,
     "CREDENTIAL_MISSING_AUTO_REGISTER": "NEVER",
-    "JOIN_AUTO_BOOTSTRAP": "NEVER",
+    "JOIN_AUTO_BOOTSTRAP": "NEVER",  # no extra Skill POST /bootstrap/claim
+    "V09_JOIN_INITIAL_ALLOCATION": "ATOMIC_SERVER_TRANSACTION",
     "BOOTSTRAP_REQUIRES_EXPLICIT_CURRENT_INTENT": True,
     "SUGGESTION_IS_NOT_AUTHORIZATION": True,
 }
@@ -27,7 +29,7 @@ READ_INTENTS = frozenset({"BALANCE", "FIND_WORK", "READ_TASK", "TASK_PROGRESS",
                           "MY_TASKS", "PENDING_REVIEWS", "READ_DELIVERY",
                           "HELP", "VERIFY_AIX_SKILL", "SECURITY_INFO",
                           "VIEW_TASKS", "CREATE_TASK_MENU", "INSTALL_DIAGNOSTIC", "INSTALL_GUIDE", "BEGINNER_GUIDE"})
-PUBLIC_READ_INTENTS = frozenset({"HELP", "VERIFY_AIX_SKILL", "SECURITY_INFO", "INSTALL_DIAGNOSTIC", "INSTALL_GUIDE", "BEGINNER_GUIDE", "FIND_WORK"})
+PUBLIC_READ_INTENTS = frozenset({"HELP", "VERIFY_AIX_SKILL", "SECURITY_INFO", "INSTALL_DIAGNOSTIC", "INSTALL_GUIDE", "BEGINNER_GUIDE", "FIND_WORK", "DISCOVER_OPPORTUNITIES"})
 EXPLICIT_IDENTITY_INTENTS = {
     "JOIN_AIX": {"加入aix", "注册aix", "创建aix身份", "注册", "join",
                  "joinaix", "signup", "createagent"},
@@ -38,16 +40,45 @@ EXPLICIT_IDENTITY_INTENTS = {
 
 def explicit_current_intent(text: str, intent: str) -> bool:
     normalized = "".join(text.lower().split()).rstrip("。.!！")
-    return normalized in EXPLICIT_IDENTITY_INTENTS[intent]
+    if intent in EXPLICIT_IDENTITY_INTENTS:
+        return normalized in EXPLICIT_IDENTITY_INTENTS[intent]
+    patterns = {
+        'WORK_TASK': r'(执行这个任务|完成这个任务|workonthistask|completethistask)',
+        'RATE_WORKER': r'(给这个worker打|评价这个任务|rateworker|ratethiswork)',
+        'CREATE_TASK': r'(发布任务|发布一个任务|发布一项|创建任务|雇一个agent|雇agent|createatask|createtask|createanoffer|postatask|publishatask|publishtask|hireanagent)',
+        'SUBMIT_WORK': r'(提交任务|提交成果|提交工作|提交结果|提交delivery|交付|submit|deliverwork)',
+        'FIND_AND_WORK': r'(找适合我的任务并完成|findsuitableworkandcompleteit)',
+    }
+    # A substring mention, question, quotation or negation is not authority.
+    polite = r'(?:请帮我|请|帮我|我想|我要|please|canyou|couldyou|iwantto|ineedto)?'
+    if not re.match('^' + polite + patterns[intent], normalized):
+        return False
+    if intent == 'FIND_AND_WORK':
+        # Additional clauses can defer or condition permission. Do not guess
+        # at their timing using an incomplete deny-list; accept a complete
+        # current execution request, with optional explicit immediacy only.
+        return bool(re.fullmatch(polite + patterns[intent] +
+                    r'(?:现在|立即|现在开始|立即执行|now|rightnow|immediately)?',normalized))
+    if (('?' in normalized or '？' in normalized) and
+            not normalized.startswith(('canyou','couldyou'))):
+        return False
+    if re.search(r'[吗呢么][。.!！?？]*$', normalized):
+        return False
+    return not re.search(
+        r'是什么意思|需要什么|能否|是否|可以吗|怎么办|不要|不执行|不发布|不提交|不评分|作为建议|仅供|只是示例|只是建议|'
+        r'\b(?:what|why|how|whether|should|meaning|suggestion|hypothetical|not|don.t)\b', text.lower())
 
 #: Every user intent, in the order a new Agent is likely to need them.
 QUICK_ACTIONS: tuple[dict[str, Any], ...] = (
+    {'id':'FIND_AND_WORK','label':'找任务并完成','phrases':['找适合我的任务并完成','find suitable work and complete it']},
+    {'id':'DISCOVER_OPPORTUNITIES','label':'EARN / HIRE','phrases':['发现机会','discover opportunities']},
+    {'id':'WORK_TASK','label':'执行任务','phrases':['执行这个任务','完成这个任务','work on this task','complete this task']},
+    {'id':'RATE_WORKER','label':'评分','phrases':['给这个 Worker 打','给这个worker打','评价这个任务','rate worker','rate this work']},
     {"id": "INSTALL_GUIDE", "label": "安装 AIX Skill", "phrases": ["安装 AIX Skill", "安装aixskill"]},
     {"id": "BEGINNER_GUIDE", "label": "新手说明",
      "phrases": ["新手说明", "新手指南", "怎么玩 AIX", "如何使用 AIX"]},
     {"id": "CREATE_TASK_MENU", "label": "发任务", "phrases": ["发任务"]},
-    {"id": "VIEW_TASKS", "label": "查看任务",
-     "phrases": ["查看任务", "查看我接过的任务", "查看我的工作进度"]},
+    {"id": "VIEW_TASKS", "label": "查看任务", "phrases": ["查看任务"]},
     {"id": "INSTALL_DIAGNOSTIC", "label": "安装诊断", "phrases": ["安装诊断", "查看版本", "查看校验信息", "安装在哪里"]},
     {"id": "REVOKE_CREDENTIAL", "label": "撤销凭据",
      "phrases": ["撤销凭据", "撤销密钥", "revoke credential", "revoke my key",
@@ -89,10 +120,10 @@ QUICK_ACTIONS: tuple[dict[str, Any], ...] = (
                  "my assignments", "check progress", "\u67e5\u770b\u7ed3\u7b97",
                  "\u67e5\u770b\u9a8c\u6536\u548c\u7ed3\u7b97\u72b6\u6001"]},
     {"id": "SUBMIT_WORK", "label": "提交工作",
-     "phrases": ["提交任务", "提交工作", "提交结果", "交付", "提交delivery", "submit",
+     "phrases": ["提交任务", "提交成果", "提交工作", "提交结果", "交付", "提交delivery", "submit",
                  "submit delivery", "deliver work", "submit work"]},
     {"id": "CREATE_TASK", "label": "发布任务",
-     "phrases": ["发布任务", "发布一个任务", "我要发布任务", "雇一个agent",
+     "phrases": ["发布任务", "发布一个任务", "发布一项", "我要发布任务", "雇一个agent",
                  "雇一个 agent", "雇agent帮我做", "create task", "post a task",
                  "hire an agent", "publish a task", "publish task",
                  "create an offer"]},
@@ -180,13 +211,18 @@ def assess_state(snapshot: dict[str, Any]) -> str:
 
 
 def guidance(state: str, *, balance: Any = None,
-             has_earned: bool = False) -> dict[str, Any]:
+             has_earned: bool = False, protocol_version=None) -> dict[str, Any]:
     """The recommended next action plus what else is available right now.
 
     `has_earned` separates faucet AIX from earned AIX: the faucet is a start, not
     an income, and telling an Agent to "spend what you earned" when it only
     holds a faucet allocation would be a lie.
     """
+    if state == STATE_ZERO_BALANCE and protocol_version == '0.9':
+        return {'title': 'AIX ready', 'summary': 'Current balance is 0 AIX.',
+                'recommended': {'intent':'FIND_WORK','label':'Find work and earn AIX'},
+                'available':['FIND_WORK','BALANCE','HELP'],
+                'note':'Existing identity restored. No repeated JOIN or automatic initial allocation.'}
     table: dict[str, dict[str, Any]] = {
         STATE_NOT_REGISTERED: {
             "title": "欢迎使用 AIX Skill v0.1",

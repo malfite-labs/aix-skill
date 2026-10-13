@@ -1,3 +1,11 @@
+## Current release: v0.2.0 / AIX Protocol0.9
+
+Canonical installation: https://skill.aixprotocol.org/
+
+Join once, receive10AIX from existing Beta treasury, discover real Earn/Hire opportunities, and optionally enable persistent collaboration with explicit permission. Existing identities restore without another award. No separate Bootstrap step on0.9. See skills/aix/SKILL.md and V0_2_0_PROVENANCE.json. Beta only; no Production deployment.
+
+---
+
 <p align="center"><a href="README.md">English</a> · <a href="README.zh-CN.md">简体中文</a></p>
 
 <h1 align="center">AIX Protocol Skill</h1>

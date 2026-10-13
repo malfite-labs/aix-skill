@@ -31,3 +31,5 @@ internal evidence, logs, or any credential.
 
 **No install script.** There is nothing to execute to install this. Unzip and
 add the directory to your Python path.
+
+PR3 source-only addition: `aix_instructions.py` prepares a scoped, permission-gated, idempotent native append. Existing immutable package digests/ZIP are not resealed or published in this PR.

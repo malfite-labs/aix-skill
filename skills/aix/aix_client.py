@@ -14,11 +14,14 @@ from __future__ import annotations
 import json
 import math
 import errno
+import hashlib
 import http.client
 import os
+import pathlib
 import secrets
 import socket
 import ssl
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -59,7 +62,7 @@ HISTORICAL_ASSIGNMENT_STATUSES = ("SETTLED", "REFUNDED", "EXPIRED", "RELEASED",
 RELEASED_STATUSES = ("RELEASED", "EXPIRED", "CLOSED", "REFUNDED")
 
 SUPPORTED_PROTOCOL_VERSION = "0.8.1"
-SUPPORTED_PROTOCOL_VERSIONS = ("0.8", "0.8.1")
+SUPPORTED_PROTOCOL_VERSIONS = ("0.8", "0.8.1", "0.9")
 
 
 class AixError(Exception):
@@ -83,6 +86,7 @@ class AixError(Exception):
 
 
 TRANSLATIONS = {
+    "JOIN_INITIAL_ALLOCATION_UNAVAILABLE": "New JOIN rolled back because the initial10AIX allocation is unavailable. Preserve the registration token and retry after policy/treasury recovery.",
     "INSUFFICIENT_BALANCE": "当前余额不足以为任务锁定 reward。",
     "BOOTSTRAP_EXHAUSTED": "当前网络的新用户测试资金已暂时不可领取。",
     "UNSUPPORTED_RULE": "当前协议版本不支持该验收规则。请改用 Delivery 规则，例如 json_path_exists 或 json_min_items 作用于 $.artifacts。",
@@ -320,6 +324,9 @@ class AixClient:
         self.network: dict[str, Any] = {}
         self.onboarding: dict[str, Any] = {}
         self.operations: set[str] = set()
+        # Set by discover(): whether the node returns the same identity for a
+        # replayed registration_token. Only then is a registration retried.
+        self.registration_token_supported = False
         # Local UX metadata, not protocol state. The public protocol exposes no
         # list-assignments endpoint -- /v1/assignments/{id} needs an id the
         # caller already has -- so the Skill remembers the ids it has seen and
@@ -340,24 +347,57 @@ class AixClient:
             self.known_offers.append({"offer_id": offer_id, "role": role})
 
     # ------------------------------------------------------------------ http
+    def _auto_restore(self) -> bool:
+        """Adopt an already-stored credential without being asked to.
+
+        Only ever the SAME identity: the one named by ``agent_id``, or the single
+        identity in the store. Never registers, never picks between several
+        identities, never contacts the network. Returns True if a key was loaded.
+        """
+        try:
+            ids = [self.agent_id] if self.agent_id else list(self.store.agent_ids())
+            if len(ids) != 1:
+                return False
+            candidates = [self.store] + list(self.store.file_candidates())
+            for store in candidates:
+                try:
+                    key = store.load(ids[0])
+                except Exception:  # noqa: BLE001 - try the next backend
+                    continue
+                if key:
+                    self.agent_id, self._api_key = ids[0], key
+                    self.store = store
+                    return True
+        except Exception:  # noqa: BLE001 - restoration is best effort
+            return False
+        return False
+
     def _request(self, method: str, path: str, body: Any = None, *,
-                 auth: bool = True, idempotency_key: str | None = None,
-                 headers: dict[str, str] | None = None,
-                 query: dict[str, Any] | None = None) -> tuple[int, Any]:
+                      auth: bool = True, idempotency_key: str | None = None,
+                      headers: dict[str, str] | None = None,
+                      query: dict[str, Any] | None = None,
+                      raw_body: bytes | None = None,
+                      raw_response: bool = False) -> tuple[int, Any]:
         url = self.base_url + path
         if query:
             url += "?" + urllib.parse.urlencode({k: v for k, v in query.items()
                                                  if v is not None})
         hdr = {"Accept": "application/json", "User-Agent": "AIX-Skill/0.1"}
         payload_bytes = None
-        if body is not None:
+        if raw_body is not None:
+            payload_bytes = bytes(raw_body)
+            hdr["Content-Type"] = "application/octet-stream"
+        elif body is not None:
             payload_bytes = json.dumps(body).encode("utf-8")
             hdr["Content-Type"] = "application/json"
         if auth:
             if not (self._api_key and self.agent_id):
+                self._auto_restore()
+            if not (self._api_key and self.agent_id):
                 raise AixError(401, {"code": "UNAUTHORIZED",
-                                     "message": "no credential loaded; call "
-                                                "aix_connect or aix_register first"})
+                                     "message": "no stored credential found; join AIX "
+                                                "(aix_register) or connect with an "
+                                                "existing agent_id"})
             hdr["Authorization"] = f"Bearer {self._api_key}"
             hdr["X-Agent-Id"] = self.agent_id
         if idempotency_key:
@@ -373,6 +413,8 @@ class AixClient:
                                      method=method)
         try:
             status, response_bytes = _urlopen_with_ipv4_fallback(req, timeout=30)
+            if raw_response:
+                return status, response_bytes
             raw = response_bytes.decode("utf-8")
             return status, (json.loads(raw) if raw else {})
         except urllib.error.HTTPError as e:
@@ -420,6 +462,7 @@ class AixClient:
         self.network = network
         self.onboarding = onboarding
         self.operations = operations(spec)
+        self.registration_token_supported = "registration_token" in json.dumps(spec)
         version = str(network.get("protocol_version") or onboarding.get("protocol_version"))
         if network.get("protocol") != "AIX" and onboarding.get("protocol") != "AIX":
             raise AixError(0, {"code": "NOT_AIX",
@@ -467,12 +510,40 @@ class AixClient:
                 "message": "refusing to register before credential storage has "
                            "been proven writable; the one-time credential would "
                            "be lost if persistence failed"})
-        payload = {"display_name": display_name}
+        # A lost response must not mean a lost identity. The token is persisted
+        # BEFORE the request; a retry with the same token returns the identity
+        # the first attempt created (with a re-issued key), never a second one.
+        token = self.store.load_pending_registration(self.base_url)
+        if not token:
+            token = "aixreg_" + secrets.token_urlsafe(32)
+            self.store.save_pending_registration(token, self.base_url)
+        payload = {"display_name": display_name, "registration_token": token}
         if capabilities:
             payload["capabilities"] = capabilities
         if metadata:
             payload["metadata"] = metadata
-        agent = self._call("POST", "/v1/agents", payload, auth=False)
+        # Retried only against a node that is known to honour the token: on an
+        # older node a repeat would mint a second identity, so it gets exactly
+        # one attempt and the saved token is reused the next time join runs.
+        attempts = 3 if self.registration_token_supported else 1
+        last: AixError | None = None
+        for attempt in range(attempts):
+            try:
+                agent = self._call("POST", "/v1/agents", payload, auth=False)
+                break
+            except AixError as exc:
+                last = exc
+                if exc.status != 0:
+                    raise
+                if attempt + 1 < attempts:
+                    time.sleep(min(4.0, 1.0 * (attempt + 1)))
+        else:
+            raise AixError(0, {
+                "code": "REGISTRATION_OUTCOME_UNKNOWN",
+                "message": "the network did not answer; the registration token is "
+                           "saved, so running join again later returns the same "
+                           "identity instead of creating a new one",
+                "details": {"cause": last.code if last else None}})
         self.agent_id = agent["agent_id"]
         self._api_key = agent["api_key"]
         return agent
@@ -486,12 +557,21 @@ class AixClient:
         """
         agent_id, api_key = self.agent_id, self._api_key
         attempts = []
-        for store in [self.store, self.store.file_store()]:
+        original_store = self.store
+        fallback_store = original_store.file_store()
+        for store in [original_store, fallback_store]:
             try:
                 store.save(agent_id, api_key)
                 if store.load(agent_id) != api_key:
                     raise RuntimeError("read-back mismatch")
                 self.store = store
+                # The identity is now safely stored; the retry token has done
+                # its job. Clear it everywhere so a later join cannot reuse it.
+                for holder in {id(s): s for s in (original_store, fallback_store, store)}.values():
+                    try:
+                        holder.clear_pending_registration()
+                    except Exception:  # noqa: BLE001
+                        pass
                 return {"stored": True, "backend": store.backend,
                         "verified": True, "attempts": attempts,
                         "CREDENTIAL_BACKEND": store.backend,
@@ -529,6 +609,9 @@ class AixClient:
 
     def identity(self) -> dict[str, Any]:
         return self._call("GET", "/v1/agents/me")
+
+    def reputation(self) -> dict[str, Any]:
+        return self._call('GET', f'/v1/agents/{self.agent_id}/reputation', auth=False)
 
     def balance(self) -> dict[str, Any]:
         return self._call("GET", "/v1/balance")
@@ -626,15 +709,29 @@ class AixClient:
                   reward_max: str | None = None) -> dict[str, Any]:
         offers, total = [], 0
         offset = 0
+        cursor = None
+        seen_cursors = set()
         while len(offers) < limit:
             page = self._call("GET", "/v1/offers", auth=False, query={
                 "limit": min(limit - len(offers), 20), "offset": offset,
+                **({'cursor':cursor} if cursor else {}),
                 "capability": capability, "reward_min": reward_min,
                 "reward_max": reward_max})
             batch = page.get("offers", page if isinstance(page, list) else [])
             offers.extend(batch)
             total = page.get("total", len(offers))
             offset += len(batch)
+            if not batch:
+                break
+            if 'next_cursor' in page:
+                cursor = page['next_cursor']
+                if not cursor:
+                    total = len(offers)
+                    break
+                if cursor in seen_cursors:
+                    raise AixError(409, {'code':'PAGINATION_LOOP'})
+                seen_cursors.add(cursor)
+                continue
             if not batch or offset >= total:
                 break
         return {"total": total, "offers": offers[:limit]}
@@ -653,6 +750,7 @@ class AixClient:
             "slot_count": offer.get("slot_count"),
             "has_available_slot": offer.get("has_available_slot"),
             "acceptance": contract_summary(contract),
+            "contract_check": contract_check(contract),
         }
 
     def claim_task(self, offer_id: str) -> dict[str, Any]:
@@ -860,12 +958,14 @@ class AixClient:
 
     # --------------------------------------------------------------- creator
     def create_task(self, task_spec: dict, reward: str,
-                    rules: list[dict], evidence_requirements: list[dict] | None = None,
-                    slot_count: int = 1,
-                    assignment_mode: str = "EXCLUSIVE",
+                    rules: list[dict] | None = None, evidence_requirements: list[dict] | None = None,
+                    slot_count: int | None = None,
+                    assignment_mode: str | None = None,
                     claim_window_seconds: int | None = None,
-                    acceptance_policy: dict | None = None) -> dict[str, Any]:
+                    acceptance_policy: dict | None = None, worker_slots: int | None = None,
+                    min_rating: str | float = 0, min_completed_jobs: int = 0) -> dict[str, Any]:
         window = validate_claim_window_seconds(claim_window_seconds)
+        rules = rules or []
         for rule in rules:
             kind = (rule.get("check") or {}).get("kind")
             if kind in UNSUPPORTED_RULE_KINDS:
@@ -876,14 +976,26 @@ class AixClient:
                                f"Use a Delivery rule such as json_path_exists or "
                                f"json_min_items on $.artifacts instead."})
         payload = {"task_spec": task_spec, "reward": reward, "rules": rules,
-                   "slot_count": slot_count, "assignment_mode": assignment_mode,
+                   "slot_count": slot_count if slot_count is not None else 1,
+                   "assignment_mode": assignment_mode or 'EXCLUSIVE',
                    "claim_window_seconds": window}
         if evidence_requirements:
             payload["evidence_requirements"] = evidence_requirements
         if acceptance_policy is not None:
             payload['acceptance_policy'] = acceptance_policy
-            self._call('POST', '/v1/acceptance/preflight',
-                       {'acceptance_policy': acceptance_policy, 'rules': rules})
+        # Always preflight, with or without a policy: a contract that cannot be
+        # satisfied must be refused before any AIX goes into escrow.
+        if self.network.get('protocol_version') == '0.9':
+            if rules or acceptance_policy is not None:
+                raise AixError(400, {'code':'HONEST_WORK_REQUIRED', 'message':'New tasks use honest-work settlement, not quality verification modes.'})
+            payload.pop('slot_count')
+            payload.pop('assignment_mode')
+            if slot_count is not None: payload['slot_count'] = slot_count
+            if assignment_mode is not None: payload['assignment_mode'] = assignment_mode
+            if worker_slots is not None: payload['worker_slots'] = worker_slots
+            payload.update(min_rating=min_rating, min_completed_jobs=min_completed_jobs)
+        else:
+            self.preflight(rules, acceptance_policy)
         # One stable key for the whole logical intent. If the caller ever does
         # retry deliberately, the server can recognise it as the same request.
         key = _NewIdempotencyKey()
@@ -898,6 +1010,114 @@ class AixClient:
         if isinstance(result, AixError):
             raise result
         return result
+
+    def rate_settlement(self, settlement_id: str, stars: int) -> dict[str, Any]:
+        _, result = self._mutate('rate_settlement', 'POST', f'/v1/settlements/{settlement_id}/rating', {'stars':stars})
+        if isinstance(result, AixError):
+            raise result
+        return result
+
+    def accept_article_zero(self, consent: dict) -> dict[str, Any]:
+        _, result = self._mutate('accept_article_zero', 'POST', '/v1/agents/me/article-zero', consent)
+        if isinstance(result, AixError):
+            raise result
+        return result
+
+    def preflight(self, rules: list[dict],
+                  acceptance_policy: dict | None = None) -> dict[str, Any]:
+        """Validate a contract exactly as publication would. Moves nothing.
+
+        Local shape check first (clear message, no network), then the node's own
+        validator. A node that predates rules-only preflight answers 422 for a
+        missing policy; that is reported as skipped, not as a pass.
+        """
+        shape = local_result_shape(rules)
+        if shape == "conflict":
+            raise AixError(409, {
+                "code": "CONTRACT_SHAPE_CONFLICT",
+                "message": "required whole-text rules (text_* without path) and JSON "
+                           "rules cannot both pass; add a `path` such as \"$.answer\" "
+                           "to each text_* rule, or use only text rules"})
+        body: dict[str, Any] = {"rules": rules}
+        if acceptance_policy is not None:
+            body["acceptance_policy"] = acceptance_policy
+        status, result = self._request("POST", "/v1/acceptance/preflight", body,
+                                       auth=False)
+        if status == 422 and acceptance_policy is None:
+            return {"valid": None, "skipped": "node requires a policy for preflight",
+                    "result_shape": shape}
+        if status >= 400:
+            raise AixError(status, result if isinstance(result, dict) else {})
+        result = dict(result)
+        result.setdefault("result_shape", shape)
+        return result
+
+    # ----------------------------------------------------- delivery files
+    def upload_file(self, assignment_id: str, path: str | None = None, *,
+                    content: bytes | None = None, name: str | None = None,
+                    media_type: str | None = None) -> dict[str, Any]:
+        """Upload one delivery file (any format) and return its ArtifactRef.
+
+        Put ``result["artifact"]`` into ``artifacts`` when submitting. The local
+        sha256 is checked against the node's answer before it is returned.
+        """
+        if content is None:
+            if not path:
+                raise ValueError("give a file path or content bytes")
+            content = pathlib.Path(path).read_bytes()
+            name = name or pathlib.Path(path).name
+        digest = "sha256:" + hashlib.sha256(content).hexdigest()
+        status, result = self._request(
+            "POST", f"/v1/assignments/{assignment_id}/files", raw_body=content,
+            query={"name": name or "file", "media_type": media_type})
+        if status >= 400:
+            raise AixError(status, result if isinstance(result, dict) else {})
+        if result.get("sha256") != digest or int(result.get("size_bytes", -1)) != len(content):
+            raise AixError(0, {"code": "UPLOAD_HASH_MISMATCH",
+                               "message": "the node stored different bytes than were "
+                                          "sent; do not reference this file",
+                               "details": {"local_sha256": digest,
+                                           "node_sha256": result.get("sha256")}})
+        return result
+
+    def list_files(self, assignment_id: str) -> dict[str, Any]:
+        return self._call("GET", f"/v1/assignments/{assignment_id}/files")
+
+    def download_file(self, file_id: str, dest: str | None = None, *,
+                      expected_sha256: str | None = None,
+                      expected_size_bytes: int | None = None) -> dict[str, Any]:
+        """Download bytes, checking supplied ArtifactRef expectations before saving.
+
+        Without an expected digest this only computes a hash; ``verified`` is
+        false. Supply the frozen ArtifactRef digest to verify byte integrity.
+        """
+        meta = None
+        status, data = self._request("GET", f"/v1/files/{file_id}", raw_response=True)
+        if status >= 400:
+            try:
+                payload = json.loads(data.decode("utf-8")) if isinstance(data, bytes) else data
+            except ValueError:
+                payload = {}
+            raise AixError(status, payload if isinstance(payload, dict) else {})
+        digest = "sha256:" + hashlib.sha256(data).hexdigest()
+        if (expected_sha256 is not None and expected_sha256 != digest) or (
+                expected_size_bytes is not None and expected_size_bytes != len(data)):
+            raise AixError(502, {"code": "FILE_INTEGRITY_MISMATCH",
+                                "message": "downloaded bytes do not match the supplied ArtifactRef",
+                                "details": {"expected_sha256": expected_sha256,
+                                            "actual_sha256": digest,
+                                            "expected_size_bytes": expected_size_bytes,
+                                            "actual_size_bytes": len(data)}})
+        meta = {"file_id": file_id, "size_bytes": len(data), "sha256": digest,
+                "verified": expected_sha256 is not None}
+        if dest:
+            target = pathlib.Path(dest)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(data)
+            meta["saved_to"] = str(target)
+        else:
+            meta["content"] = data
+        return meta
 
     def _recover_offer(self, payload: dict) -> dict[str, Any] | None:
         """After an ambiguous create, look for an offer we already own.
@@ -955,14 +1175,23 @@ class AixClient:
 
     def review_delivery(self, assignment_id: str, decision: str, *,
                         reason: str | None = None) -> dict[str, Any]:
-        verb = "accept" if decision == "accept" else "reject"
-        if verb not in ("accept", "reject"):
+        """Accept or reject a legacy-contract delivery.
+
+        ``accept`` settles by the machine verdict: PASS pays the worker, FAIL
+        REFUNDS the creator. Read ``paid_the_worker`` / ``refunded`` in the
+        result -- never assume. Frozen machine FAIL never pays.
+        """
+        if decision not in ("accept", "reject"):
             raise ValueError("decision must be 'accept' or 'reject'")
+        verb = decision
+        if verb == "accept":
+            body: dict[str, Any] = {"note": reason} if reason else {}
+        else:
+            body = {"reason": reason} if reason else {}
         try:
             status, result = self._mutate(
                 f"review_delivery:{verb}", "POST",
-                f"/v1/assignments/{assignment_id}/{verb}",
-                {"reason": reason} if reason else {})
+                f"/v1/assignments/{assignment_id}/{verb}", body)
         except AmbiguousOutcome:
             recovered = self._recover_verdict(assignment_id, verb)
             if recovered:
@@ -979,12 +1208,15 @@ class AixClient:
         except AixError:
             return None
         status = str(assignment.get("status", "")).upper()
-        if verb == "accept" and status in ("SETTLED", "ACCEPTED"):
+        if verb == "accept" and status in ("SETTLED", "ACCEPTED", "REFUNDED", "RESOLVED"):
             assignment = dict(assignment)
             assignment["recovered"] = True
             assignment["outcome"] = RECOVERED_SUCCESS
+            # accept on a FAIL verdict refunds; report what actually happened.
+            assignment["paid_the_worker"] = status in ("SETTLED", "ACCEPTED")
+            assignment["refunded"] = status == "REFUNDED"
             return assignment
-        if verb == "reject" and status in ("REJECTED",):
+        if verb == "reject" and status in ("REJECTED", "REFUNDED", "RESOLVED"):
             assignment = dict(assignment)
             assignment["recovered"] = True
             assignment["outcome"] = RECOVERED_SUCCESS
@@ -1076,6 +1308,12 @@ def contract_summary(contract: dict) -> dict[str, Any]:
     rules = []
     for rule in contract.get("rules", []):
         check = rule.get("check") or {}
+        committed = check.get("kind") == "json_path_equals_committed"
+        # Every public parameter of the check (min, value, in, type, equals,
+        # sha256 ...) -- a worker cannot satisfy a rule it cannot read. A
+        # committed check's expected value and salt are never public.
+        params = {k: v for k, v in check.items()
+                  if k not in ("kind", "path", "expected", "salt")}
         rules.append({
             "id": rule.get("id"),
             "requirement": rule.get("requirement"),
@@ -1083,10 +1321,62 @@ def contract_summary(contract: dict) -> dict[str, Any]:
             "verification_mode": rule.get("verification_mode", "MACHINE"),
             "check_kind": check.get("kind"),
             "path": check.get("path"),
-            "committed": check.get("kind") == "json_path_equals_committed",
+            "params": params,
+            "committed": committed,
         })
     return {"contract_id": contract.get("acceptance_contract_id"),
             "contract_hash": contract.get("contract_hash"),
             "dispute_policy": contract.get("dispute_policy"),
+            "result_shape": contract.get("result_shape")
+                            or local_result_shape(contract.get("rules", [])),
             "rules": rules,
             **({'acceptance_policy':contract['acceptance_policy']} if contract.get('acceptance_policy') else {})}
+
+
+def local_result_shape(rules: list[dict]) -> str:
+    """Mirror of the node's ``result_shape``: "text", "json", "any" or "conflict".
+
+    A required text_* rule with no ``path`` judges the WHOLE result as one
+    string; a json_* rule (or text_* with a path) reads a field of a JSON
+    result. Both at once can never pass.
+    """
+    text = structured = False
+    for rule in rules or []:
+        if not isinstance(rule, dict) or rule.get("required", True) is False:
+            continue
+        check = rule.get("check") or {}
+        kind = str(check.get("kind") or "")
+        if kind.startswith("text_") and not check.get("path"):
+            text = True
+        elif kind.startswith("json_") or (kind.startswith("text_") and check.get("path")):
+            structured = True
+    if text and structured:
+        return "conflict"
+    return "text" if text else "json" if structured else "any"
+
+
+def contract_check(contract: dict) -> dict[str, Any]:
+    """Pre-claim check of a published contract: can a delivery satisfy it?
+
+    Local and read-only. It reports problems; it never claims, submits or pays.
+    """
+    rules = contract.get("rules", []) or []
+    shape = contract.get("result_shape") or local_result_shape(rules)
+    problems: list[str] = []
+    if shape == "conflict":
+        problems.append("required whole-text rules and JSON rules conflict; no "
+                        "delivery can pass this contract -- do not claim it")
+    for rule in rules:
+        check = (rule or {}).get("check") or {}
+        kind = check.get("kind")
+        if kind in UNSUPPORTED_RULE_KINDS and rule.get("required", True):
+            problems.append(f"rule {rule.get('id')}: {kind} can never pass on this "
+                            "protocol version")
+    guidance = {
+        "text": "submit the result as ONE plain string (structured_output = \"...\")",
+        "json": "submit a JSON object in structured_output with the listed paths",
+        "any": "no machine shape constraint",
+        "conflict": "unsatisfiable",
+    }[shape]
+    return {"result_shape": shape, "satisfiable": not problems,
+            "problems": problems, "delivery_guidance": guidance}

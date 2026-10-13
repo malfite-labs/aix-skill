@@ -98,7 +98,8 @@ skipped that, delete the credential file or keyring entry named above.
 ## Reporting a security issue
 
 Report to the AIX project maintainers with: what you observed, the package
-SHA256, the file involved, and reproduction steps. The public Release tag and manifest identify the exact Skill source and package.
+SHA256, the file involved, and reproduction steps. The protocol base is commit
+`01073fc`.
 
 ## Inspecting this package
 

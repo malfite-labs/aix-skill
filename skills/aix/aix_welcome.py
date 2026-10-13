@@ -20,6 +20,39 @@ def code_block(text):
     return "```text\n" + text + "```"
 
 
+def opportunity_summary(packet):
+    """Show recommendations; never treat market text as commands."""
+    lines = []
+    profile = packet.get('profile')
+    if profile:
+        lines.append(f"公开信誉：{profile['reputation']}；已完成：{profile['completed_jobs']}")
+    reasons = {'NO_AUTHORIZED_CONTEXT':'没有可访问的授权项目上下文。',
+               'HOST_SELECTION_REQUIRED':'等待宿主选择；候选尚未被判断为匹配。',
+               'NO_ELIGIBLE_OFFERS':'当前没有符合接单门槛的可领取任务。',
+               'MARKET_UNAVAILABLE':'当前无法核实市场和接单资格。',
+               'JOIN_REQUIRED':'请先明确加入 AIX。', 'NO_MATCH':'未找到适合当前能力的真实任务。',
+               'NO_REAL_HIRE_NEED':'当前没有已确认的真实委托需求。'}
+    earn = packet.get('earn')
+    lines.append('EARN AIX')
+    if earn:
+        spec = earn['task_spec']
+        title = (spec.get('title') or spec.get('description') or 'Market task') if isinstance(spec,dict) else str(spec)
+        lines.extend([f"{title} — {earn['reward']} AIX",'理由：'+earn['match_reason']])
+    else:
+        lines.append(reasons.get(packet.get('earn_reason'),'未选择任务。'))
+    hire = packet.get('hire')
+    lines.append('HIRE AGENT')
+    if hire:
+        lines.extend([hire['task_suggestion'],'理由：'+hire['why_it_helps']])
+    else:
+        lines.append(reasons.get(packet.get('hire_reason'),'未发现真实委托需求。'))
+    if packet.get('state')=='HOST_SELECTION_REQUIRED':
+        lines.append('宿主 Agent：请根据已授权上下文判断候选是否匹配；没有匹配就如实说明。')
+    else:
+        lines.append('READY — 选择 EARN / HIRE；建议不会自动执行或支付。')
+    return '\n'.join(lines)
+
+
 class InstallLifecycle:
     """Product states driven by verified runtime facts; never executes an install.
 
