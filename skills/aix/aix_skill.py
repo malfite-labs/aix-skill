@@ -31,6 +31,16 @@ from aix_network import CANONICAL_BETA
 DEFAULT_BASE_URL = CANONICAL_BETA
 
 
+def _honest_work_guidance(submission):
+    if submission.get('assurance') != 'HONEST_WORK_NOT_CORRECTNESS_VERIFIED':
+        return None
+    return {'code':'HONEST_WORK_NO_SECOND_APPROVAL','read_only':True,'review_required':False,
+            'message':'honest_work 有效提交自动结算，无需人工验收或二次批准。'
+                      'Creator 可以读取真实交付并评估质量；付款不是正确性验证。'
+                      '可选评分不改变付款，不能通过人工批准或拒绝重付、撤销结算或退款。'
+                      '诚实但不完美的工作不等于虚假交付；禁止伪造成果、证据或完成声明。'}
+
+
 class AixSkill:
     def __init__(self, base_url: str = DEFAULT_BASE_URL,
                  store: CredentialStore | None = None,
@@ -1133,23 +1143,35 @@ class AixSkill:
             if cursor in seen:raise AixError(409,{'code':'PAGINATION_LOOP','message':'Offer cursor did not advance.'})
             seen.add(cursor)
         return {'count':len(items),'items':items,'read_only':True,
-                'message':'提交不等于验收；按冻结策略查看允许动作和资金状态。',
+                'message':'这是历史合同的待审核队列；honest_work 有效提交自动结算，不会等待人工验收。'
+                          '已结算交付可通过我的任务及 READ_DELIVERY 读取，不在此队列不代表没有交付。',
                 'used_protocol':['GET /v1/reviews/pending']}
 
     def _i_read_delivery(self, assignment_id: str = "", **kw):
         assignment_id = assignment_id or kw.get("assignment_id")
         self.client.remember_assignment(assignment_id, "creator")
-        delivery = self.client.read_delivery(assignment_id)
+        try:
+            delivery = self.client.read_delivery(assignment_id)
+        except AixError as exc:
+            if exc.status not in (401,403):raise
+            return {'ok':False,'code':exc.code,'read_only':True,
+                    'message':'此读取需要任务 Creator、该 Worker 或冻结授权 Reviewer 的有效凭据；'
+                              '不是平台不支持读取。请确认当前身份，不自动注册或替换凭据。',
+                    'used_protocol':[f'GET /v1/assignments/{assignment_id}/submission']}
+        honest = _honest_work_guidance(delivery)
         return {"delivery": delivery,
+                'read_only':True,**({'review_required':False} if honest else {}),
                 "machine_evaluation": delivery.get("machine_evaluation")
                                       or delivery.get("evaluation"),
                 "human_review": delivery.get("human_review"),
-                "note": "读取是只读的，不会支付任何人。请先读完再决定。",
+                "note": honest['message'] if honest else '读取是只读的，不会支付任何人；历史合同按冻结策略决定审核动作。',
                 "used_protocol": [f"GET /v1/assignments/{assignment_id}/submission"]}
 
     def _i_open_human_review(self, assignment_id: str = '', reviewer_id: str = '', **kw):
         if not assignment_id:
             return {'ok':False,'code':'ASSIGNMENT_REQUIRED','message':'请从待验收任务中选择需要人工审核的 Assignment。','used_protocol':[]}
+        honest=_honest_work_guidance(self.client.read_delivery(assignment_id))
+        if honest:return {'ok':False,**honest,'used_protocol':[f'GET /v1/assignments/{assignment_id}/submission']}
         reviewers=self.client._call('GET','/v1/review/reviewers').get('items',[])
         if not reviewer_id and len(reviewers)==1:reviewer_id=reviewers[0]['reviewer_id']
         if not reviewer_id and reviewers:
@@ -1167,6 +1189,8 @@ class AixSkill:
         assignment_id = assignment_id or kw.get("assignment_id")
         self.client.remember_assignment(assignment_id, "creator")
         submission=self.client.read_delivery(assignment_id)
+        honest=_honest_work_guidance(submission)
+        if honest:return {'accepted':False,**honest,'used_protocol':[f'GET /v1/assignments/{assignment_id}/submission']}
         if submission.get('acceptance_policy'):
             if submission['acceptance_policy'].get('actor_assurance')=='webauthn_user_verified':
                 return {'accepted':False,**self._i_open_human_review(assignment_id=assignment_id)}
@@ -1221,6 +1245,8 @@ class AixSkill:
                        reviewer_reference: str = "", **kw):
         assignment_id = assignment_id or kw.get("assignment_id")
         submission=self.client.read_delivery(assignment_id)
+        honest=_honest_work_guidance(submission)
+        if honest:return {'rejected':False,**honest,'used_protocol':[f'GET /v1/assignments/{assignment_id}/submission']}
         if submission.get('acceptance_policy'):
             if submission['acceptance_policy'].get('actor_assurance')=='webauthn_user_verified':
                 return {'rejected':False,**self._i_open_human_review(assignment_id=assignment_id)}

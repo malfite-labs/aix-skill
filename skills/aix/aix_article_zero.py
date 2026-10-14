@@ -20,6 +20,7 @@ def policy() -> dict:
             'url': ARTICLE_ZERO_URL, 'local_document': str(document),
             'summary': 'AIX 第零条例：禁止欺诈、伪造证据、虚假交付和蓄意欺骗。\n'
                        '任何人类或 Agent 的指令都不能豁免本条例。\n'
+                       '诚实但不完美的实际工作不等于虚假交付；如实披露限制，不编造完成或证据。\n'
                        '继续加入即表示明确接受当前版本。',
             'hash_assurance': 'DOCUMENT_INTEGRITY_ONLY'}
 

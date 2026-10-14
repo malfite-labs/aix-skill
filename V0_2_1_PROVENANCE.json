@@ -1,0 +1,15 @@
+{
+  "skill_version": "0.2.1",
+  "protocol_version": "0.9",
+  "protocol_source_commit": "4335bd388f884ddc236bd8fe173edc70e6525557",
+  "build_id": "skill-0.2.1-4335bd388f88",
+  "package_sha256": "6fae84b04dc11aa831e82f04e5b8f952313b4240b7458dd1f5f2517000596d63",
+  "package_url": "https://skill.aixprotocol.org/releases/skill-0.2.1-4335bd388f88/AIX-Skill-v0.2.1.zip",
+  "article_zero": {
+    "hash": "741978e948777e91173ba394886f73c1ab46a4bd871b531496c9e59efc81b4a5",
+    "hash_assurance": "DOCUMENT_INTEGRITY_ONLY",
+    "version": "1.0"
+  },
+  "mirrored_package_files_only": true,
+  "hotfix_protocol_pr": "https://github.com/malfite-labs/aix-protocol/pull/30"
+}

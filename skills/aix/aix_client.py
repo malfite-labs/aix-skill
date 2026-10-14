@@ -1169,7 +1169,12 @@ class AixClient:
         return None
 
     def read_delivery(self, assignment_id: str) -> dict[str, Any]:
-        """Read what a worker delivered BEFORE deciding. Read-only."""
+        """Read actual Delivery, including after honest-work settlement.
+
+        Authorized Creator/Worker/frozen reviewer only. This never approves,
+        rejects, pays or refunds. Honest work has no correctness verdict;
+        historical contracts may return their existing frozen rule evaluation.
+        """
         return redact(self._call("GET",
                                  f"/v1/assignments/{assignment_id}/submission"))
 

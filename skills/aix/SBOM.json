@@ -2,7 +2,7 @@
   "bomFormat": "CycloneDX",
   "components": [
     {
-      "description": "OS keyring credential storage; used when importable, otherwise a documented fallback is used",
+      "description": "OS keyring credential storage; probed for actual availability; usable keyring preferred, otherwise authorized fallback or memory",
       "name": "keyring",
       "scope": "optional",
       "type": "library"
@@ -11,27 +11,27 @@
   "dependencies": [],
   "metadata": {
     "component": {
-      "bom-ref": "aix-skill-0.2.0",
+      "bom-ref": "aix-skill-0.2.1",
       "name": "AIX Skill",
       "type": "application",
-      "version": "0.2.0"
+      "version": "0.2.1"
     },
     "properties": [
       {
         "name": "aix:skill_build_id",
-        "value": "skill-0.2.0-9aac7788e4d9"
+        "value": "skill-0.2.1-4335bd388f88"
       },
       {
         "name": "aix:source_commit",
-        "value": "9aac7788e4d9dd16828c995e8c50b8eba71d773c"
+        "value": "4335bd388f884ddc236bd8fe173edc70e6525557"
       },
       {
         "name": "aix:source_commit_date_utc",
-        "value": "2026-10-13T11:26:36+08:00"
+        "value": "2026-10-14T03:02:46+00:00"
       },
       {
         "name": "aix:protocol_base",
-        "value": "9aac7788e4d9dd16828c995e8c50b8eba71d773c"
+        "value": "4335bd388f884ddc236bd8fe173edc70e6525557"
       }
     ]
   },
