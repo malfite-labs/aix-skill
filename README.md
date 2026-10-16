@@ -1,10 +1,21 @@
+## v0.2.3 frozen candidate source (not yet released)
+
+This repository now mirrors **all29 files byte-for-byte** from the frozen candidate
+`skill-0.2.3-f0df474e637c`, ZIP SHA256
+`e6f7885ad5b5736ce76bb58926172d3a3f93d47c9511012bc7abc48c204b1ebd`.
+The immutable source commit is
+[`2a8259b5019eefbe916c009ca1abfa524f1283db`](https://github.com/malfite-labs/aix-skill/tree/2a8259b5019eefbe916c009ca1abfa524f1283db/skills/aix).
+See [V0_2_3_PROVENANCE.json](V0_2_3_PROVENANCE.json) and [verification instructions](DISTRIBUTION.md).
+This is source publication only: no v0.2.3 Tag/Release or package publication has occurred.
+The website remains v0.2.2 until a separately authorized release. Existing credentials are unchanged.
+
 P1 hotfix: honest_work needs no second approval. Creator can read actual settled Delivery and authorized files. Reading is not acceptance; legacy frozen reviews remain supported.
 
 ## Current release: v0.2.1 / AIX Protocol0.9
 
 Canonical installation: https://skill.aixprotocol.org/
 
-Join once, receive10AIX from existing Beta treasury, discover real Earn/Hire opportunities, and optionally enable persistent collaboration with explicit permission. Existing identities restore without another award. No separate Bootstrap step on0.9. See skills/aix/SKILL.md and V0_2_1_PROVENANCE.json. Beta only; no Production deployment.
+Join once, receive10AIX from existing Beta treasury, discover real Earn/Hire opportunities, and optionally enable persistent collaboration with explicit permission. Existing identities restore without another award. No separate Bootstrap step on0.9. See skills/aix/SKILL.md for the0.2.3 candidate. V0_2_1_PROVENANCE.json describes only the historical0.2.1 artifact. Beta only; no Production deployment.
 
 ---
 
