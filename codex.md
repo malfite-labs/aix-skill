@@ -23,3 +23,8 @@ Verification: scoped safety/provenance tests 3 passed. Full candidate repo tests
 Rule: tie a published artifact to a public immutable source commit using actual package and per-file hashes; treat HTTPS SHA-256 plus a Git commit as integrity/provenance, not as a digital signature.
 Checklist: download the public ZIP freshly; verify ZIP SHA; verify package file hashes against the source commit; inspect cleanup destinations; confirm install/update operations are limited to package-owned paths; test any credential store behavior only with an isolated temporary path.
 Anti-pattern: edit an immutable public ZIP to fix metadata in place, claim a GitHub Release exists when only a website package is live, claim signed provenance when only checksums exist, or run storage tests against the default credential path.
+
+Independent review follow-up (2026-10-16): the reviewer found a low-priority diagnostic edge case in the frozen v0.2.2 `installation_status(check_public=True)` path: when a fetched public manifest has no per-file checksum map, status may still say `MATCH` while separately reporting checksums unavailable and ZIP verification false. The current live manifest does include checksums. This was not changed in the v0.2.2 package mirror because doing so would break the exact source-to-artifact proof; track a code correction as a separately versioned follow-up build. No installer deletion-scope defect was found.
+Rule: a diagnostic status of MATCH must require the evidence it claims to compare.
+Checklist: exercise missing/empty/malformed public per-file checksum maps and require UNKNOWN/PARTIAL, not MATCH.
+Anti-pattern: change the frozen release package during a provenance audit or interpret unavailable checksums as a successful comparison.
