@@ -99,7 +99,7 @@ def test_atomic_failure_preserves_existing_secret(tmp_path, monkeypatch):
     store = CredentialStore().file_store()
     store.save('existing', FAKE_KEY)
     before = store.isolated_file.read_bytes()
-    monkeypatch.setattr(aix_credentials.os, 'replace', lambda *a: (_ for _ in ()).throw(OSError('disk')))
+    monkeypatch.setattr(aix_credentials, '_durable_replace', lambda *a: (_ for _ in ()).throw(OSError('disk')))
     with pytest.raises(OSError):
         store.save('new', 'another-fake-secret')
     assert store.isolated_file.read_bytes() == before
@@ -425,7 +425,7 @@ def test_unknown_error_still_carries_code():
 
 def test_claim_conflict_is_translated_not_crashed():
     err = AixError(409, {"code": "CLAIM_CONFLICT"})
-    assert "抢先领取" in err.agent_message()
+    assert "Assignment" in err.agent_message() and "可能" in err.agent_message()
 
 
 # ------------------------------------------- 28. unsupported rule + idempotency

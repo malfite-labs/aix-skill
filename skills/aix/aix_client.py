@@ -29,6 +29,8 @@ from typing import Any
 
 from aix_credentials import CredentialStore, redact, summarize
 from aix_network import CANONICAL_BETA, BETA_HOST
+from aix_installation import loaded_source
+_AIX_LOADED_SOURCE = loaded_source(__file__)
 
 # Product default only: the frozen protocol still defaults to 3600 seconds.
 DEFAULT_SKILL_CLAIM_WINDOW_SECONDS = 86400
@@ -96,7 +98,10 @@ TRANSLATIONS = {
     "VALIDATION_ERROR": "请求参数不符合协议要求。",
     "MALFORMED_REQUEST": "请求格式不被当前协议版本接受。",
     "TASK_SPEC_CONTRACT_MISMATCH": "提交的内容与冻结的验收契约不一致。",
-    "CLAIM_CONFLICT": "任务已经被其他 Agent 抢先领取。",
+    "CLAIM_CONFLICT": "当前不能新增占位；先核对本身份 Assignment，可能已被领取、已结算或名额不可用。",
+    "ASSIGNMENT_ID_REQUIRED": "请提供 Assignment ID；若不记得，请先查询我接到的任务。",
+    "EDGE_ACCESS_DENIED": "Cloudflare 边缘拒绝访问，尚不能据此判断 API 不可用；保留 CF-Ray 并使用官方客户端，不绕过防护。",
+    "EDGE_TUNNEL_UNAVAILABLE": "Cloudflare Tunnel/源站暂不可达；写请求结果仍需核对，不要盲目重试。",
     "SLOT_UNAVAILABLE": "该任务已没有可领取的名额（已被领取或已关闭）。请寻找其他任务。",
     "CLAIM_DEADLINE_PASSED": "该任务已超过领取截止时间，不能再领取。请寻找其他任务。",
     "INVALID_IDENTITY": "身份凭据无效或不存在。请确认已加入 AIX，并使用本 Agent 保存的凭据。",
@@ -431,7 +436,12 @@ class AixClient:
             try:
                 return e.code, json.loads(raw or "{}")
             except ValueError:
-                return e.code, {"code": "NON_PROTOCOL_ERROR", "message": raw[:200]}
+                code = "NON_PROTOCOL_ERROR"
+                if e.headers.get('CF-Ray') or 'cloudflare' in e.headers.get('Server','').lower():
+                    if e.code in (403,429): code = 'EDGE_ACCESS_DENIED'
+                    elif e.code in (502,503,504,530): code = 'EDGE_TUNNEL_UNAVAILABLE'
+                return e.code, {"code": code, "message": "Non-protocol HTTP response",
+                                "details": {"cf_ray": e.headers.get('CF-Ray')}}
         except urllib.error.URLError as e:
             raise AixError(0, {"code": "NETWORK_UNREACHABLE",
                                "message": str(e.reason)}) from e
@@ -619,8 +629,15 @@ class AixClient:
     def submit_delivery(self, assignment_id: str, structured_output: Any,
                         artifacts: list[dict] | None = None,
                         external_actions: list[dict] | None = None,
-                        evidence: list[dict] | None = None) -> dict[str, Any]:
+                        evidence: list[dict] | None = None,
+                        files: list[str] | None = None) -> dict[str, Any]:
         """Record a Delivery. It performs no work: no PDF, no image, no mail."""
+        _require_assignment_id(assignment_id)
+        if files is not None:
+            uploaded = self.upload_files(assignment_id, files)
+            if uploaded['failed']:
+                return dict(uploaded, submitted=False, delivery_saved=False)
+            artifacts = list(artifacts or []) + [f['artifact'] for f in uploaded['saved']]
         delivery: dict[str, Any] = {"structured_output": structured_output}
         if artifacts:
             delivery["artifacts"] = artifacts
@@ -644,10 +661,14 @@ class AixClient:
         try:
             existing = self._call("GET",
                                   f"/v1/assignments/{assignment_id}/submission")
+            assignment = self._call('GET', f'/v1/assignments/{assignment_id}') if existing and existing.get('result_submitted') else None
         except AixError:
             return None
-        if existing:
+        if existing and existing.get('result_submitted'):
             payload = dict(existing)
+            payload.update(status=assignment['status'], settlement=assignment.get('settlement'),
+                           money_moved='0', delivery_saved=existing.get('delivery_status') != 'DELIVERY_EXPIRED',
+                           settlement_status=assignment['status'])
             payload["recovered"] = True
             payload["outcome"] = RECOVERED_SUCCESS
             return payload
@@ -699,7 +720,7 @@ class AixClient:
             payload = self._call(method, path, body, idempotency_key=key, **kw)
             return SUCCESS, payload
         except AixError as exc:
-            if exc.code in UNCERTAIN_ERRORS or exc.status == 0:
+            if exc.code in UNCERTAIN_ERRORS or exc.status == 0 or exc.status >= 500:
                 raise AmbiguousOutcome(exc.message, operation,
                                        detail=exc.agent_message()) from None
             return FAILURE, exc
@@ -707,34 +728,40 @@ class AixClient:
     def find_work(self, limit: int = 20, capability: str | None = None,
                   reward_min: str | None = None,
                   reward_max: str | None = None) -> dict[str, Any]:
-        offers, total = [], 0
-        offset = 0
-        cursor = None
-        seen_cursors = set()
+        if type(limit) is not int or limit < 1:
+            raise AixError(400, {'code':'INVALID_LIMIT','message':'limit must be a positive integer'})
+        offers, cursor, seen_cursors, seen_ids = [], None, set(), set()
+        complete = False
         while len(offers) < limit:
             page = self._call("GET", "/v1/offers", auth=False, query={
-                "limit": min(limit - len(offers), 20), "offset": offset,
-                **({'cursor':cursor} if cursor else {}),
-                "capability": capability, "reward_min": reward_min,
-                "reward_max": reward_max})
-            batch = page.get("offers", page if isinstance(page, list) else [])
-            offers.extend(batch)
-            total = page.get("total", len(offers))
-            offset += len(batch)
-            if not batch:
-                break
-            if 'next_cursor' in page:
-                cursor = page['next_cursor']
-                if not cursor:
-                    total = len(offers)
-                    break
-                if cursor in seen_cursors:
+                "limit": min(limit-len(offers),100), "cursor":cursor,
+                "capability":capability,"reward_min":reward_min,"reward_max":reward_max})
+            batch = page.get('offers',[]) if isinstance(page,dict) else page
+            if not isinstance(batch,list):
+                raise AixError(502, {'code':'INVALID_MARKET_RESPONSE'})
+            for offer in batch:
+                oid=offer.get('offer_id')
+                if oid in seen_ids:
                     raise AixError(409, {'code':'PAGINATION_LOOP'})
-                seen_cursors.add(cursor)
-                continue
-            if not batch or offset >= total:
+                seen_ids.add(oid); offers.append(offer)
+            if not isinstance(page,dict) or 'next_cursor' not in page:
+                # Older responses without a cursor cannot prove a full snapshot.
+                complete = not batch or (isinstance(page,dict) and page.get('total')==len(offers))
                 break
-        return {"total": total, "offers": offers[:limit]}
+            cursor=page['next_cursor']
+            if not cursor:
+                if page.get('has_more'):
+                    raise AixError(502, {'code':'INVALID_MARKET_RESPONSE'})
+                complete=True;break
+            if not batch:
+                break  # inconsistent empty page: incomplete, never spin or claim total
+            if cursor in seen_cursors:
+                raise AixError(409, {'code':'PAGINATION_LOOP'})
+            seen_cursors.add(cursor)
+        return {'total':len(offers) if complete else None,'offers':offers[:limit],
+                'returned_count':len(offers[:limit]),'complete':complete,'next_cursor':cursor,
+                'count_scope':'returned claimable offers; not all historical offers or guaranteed eligibility',
+                'pagination':'cursor only; offset is not a supported protocol parameter'}
 
     def read_task(self, offer_id: str) -> dict[str, Any]:
         """Read the deal BEFORE claiming: task_spec plus the frozen contract."""
@@ -902,9 +929,11 @@ class AixClient:
         return candidates[0]
 
     def start_task(self, assignment_id: str) -> Any:
+        _require_assignment_id(assignment_id)
         return self._call("POST", f"/v1/assignments/{assignment_id}/start", {})
 
     def task_progress(self, assignment_id: str) -> dict[str, Any]:
+        _require_assignment_id(assignment_id)
         assignment = self._call("GET", f"/v1/assignments/{assignment_id}")
         submission = None
         try:
@@ -998,18 +1027,29 @@ class AixClient:
             self.preflight(rules, acceptance_policy)
         # One stable key for the whole logical intent. If the caller ever does
         # retry deliberately, the server can recognise it as the same request.
-        key = _NewIdempotencyKey()
-        try:
-            status, result = self._mutate("create_offer", "POST", "/v1/offers",
-                                         payload, idempotency_key=key())
-        except AmbiguousOutcome:
-            recovered = self._recover_offer(payload)
-            if recovered:
-                return recovered
-            raise
-        if isinstance(result, AixError):
-            raise result
-        return result
+        from aix_requests import create_intent
+        if not self.agent_id:
+            self._auto_restore()
+        if not self.agent_id:
+            raise AixError(401, {'code':'UNAUTHORIZED','message':'Restore an existing identity before creating a task'})
+        with create_intent(self,payload) as (key,pending,complete):
+            if pending:
+                # Read origin state FIRST. Never retry if reconciliation itself fails.
+                self._call('GET','/v1/agents/me/offers',query={'limit':100})
+            try:
+                status,result=self._mutate('create_offer','POST','/v1/offers',payload,idempotency_key=key)
+            except AmbiguousOutcome:
+                try:self._call('GET','/v1/agents/me/offers',query={'limit':100})
+                except AixError:pass
+                # Similar payloads cannot identify a request. Keep the durable key;
+                # a later explicit retry replays that SAME server idempotency key.
+                raise
+            if isinstance(result,AixError):
+                complete();raise result
+            complete()
+            if pending:
+                result=dict(result,recovered=True,outcome=RECOVERED_SUCCESS)
+            return result
 
     def rate_settlement(self, settlement_id: str, stars: int) -> dict[str, Any]:
         _, result = self._mutate('rate_settlement', 'POST', f'/v1/settlements/{settlement_id}/rating', {'stars':stars})
@@ -1061,15 +1101,40 @@ class AixClient:
         Put ``result["artifact"]`` into ``artifacts`` when submitting. The local
         sha256 is checked against the node's answer before it is returned.
         """
+        _require_assignment_id(assignment_id)
         if content is None:
             if not path:
                 raise ValueError("give a file path or content bytes")
             content = pathlib.Path(path).read_bytes()
             name = name or pathlib.Path(path).name
         digest = "sha256:" + hashlib.sha256(content).hexdigest()
-        status, result = self._request(
-            "POST", f"/v1/assignments/{assignment_id}/files", raw_body=content,
-            query={"name": name or "file", "media_type": media_type})
+        name = name or 'file'
+        # Server state is durable across client/Agent restarts. Never infer an
+        # upload from a local filename or retry an uncertain POST blindly.
+        def existing():
+            return next((f for f in self.list_files(assignment_id).get('files', [])
+                         if f.get('filename') == name and f.get('sha256') == digest
+                         and f.get('size_bytes') == len(content) and f.get('available', True)), None)
+        found = existing()
+        if found:
+            return dict(found, idempotent_replay=True, recovered=True)
+        try:
+            status, result = self._request(
+                "POST", f"/v1/assignments/{assignment_id}/files", raw_body=content,
+                query={"name": name, "media_type": media_type})
+            if status >= 500:
+                raise AixError(status, result)
+        except AixError as exc:
+            if exc.code not in UNCERTAIN_ERRORS and exc.status < 500:
+                raise
+            try:
+                found = existing()
+            except AixError:
+                found = None
+            if found:
+                return dict(found, idempotent_replay=True, recovered=True)
+            raise AmbiguousOutcome('Upload outcome unknown; query assignment files before retry.',
+                                   'upload_file', json.dumps({'assignment_id':assignment_id, 'sha256':digest, 'filename':name})) from exc
         if status >= 400:
             raise AixError(status, result if isinstance(result, dict) else {})
         if result.get("sha256") != digest or int(result.get("size_bytes", -1)) != len(content):
@@ -1079,6 +1144,21 @@ class AixClient:
                                "details": {"local_sha256": digest,
                                            "node_sha256": result.get("sha256")}})
         return result
+
+    def upload_files(self, assignment_id: str, files: list[str]) -> dict[str, Any]:
+        """Only explicit paths; save partial progress, never finalize a Delivery."""
+        _require_assignment_id(assignment_id)
+        if not isinstance(files, (list, tuple)) or not files or not all(isinstance(p, str) and p for p in files):
+            raise AixError(422, {'code':'FILE_PATH_REQUIRED', 'message':'Provide files=[explicit_path1, explicit_path2]. No directories are scanned.'})
+        saved, failed = [], []
+        for path in files:
+            try:
+                saved.append(self.upload_file(assignment_id, path))
+            except (AixError, OSError, ValueError) as exc:
+                failed.append({'path':path, 'code':exc.code if isinstance(exc, AixError) else 'LOCAL_FILE_UNREADABLE', 'message':str(exc)})
+        return {'upload_status': 'UPLOAD_PARTIAL' if saved and failed else 'UPLOAD_FAILED' if failed else 'UPLOAD_SAVED',
+                'code':'UPLOAD_PARTIAL' if saved and failed else 'UPLOAD_FAILED' if failed else 'UPLOAD_SAVED',
+                'saved':saved,'failed':failed,'assignment_id':assignment_id, 'money_moved':'0'}
 
     def list_files(self, assignment_id: str) -> dict[str, Any]:
         return self._call("GET", f"/v1/assignments/{assignment_id}/files")
@@ -1119,53 +1199,54 @@ class AixClient:
             meta["content"] = data
         return meta
 
-    def _recover_offer(self, payload: dict) -> dict[str, Any] | None:
-        """After an ambiguous create, look for an offer we already own.
-
-        Deliberately conservative: it only reports success when a live offer
-        carrying this exact task specification and reward exists. Guessing here
-        would either duplicate an offer or hide a real failure.
-        """
+    def download_delivery(self, assignment_id: str, destination: str) -> dict[str, Any]:
+        """Save authorized content into a new directory; never overwrite files or fetch external URLs."""
+        _require_assignment_id(assignment_id)
+        delivery = self.read_delivery(assignment_id)
+        if delivery.get('delivery_status') == 'DELIVERY_EXPIRED':
+            return {'assignment_id': assignment_id, 'DELIVERY_EXPIRED': True,
+                    'CONTENT_REMOVED': bool(delivery.get('content_removed')),
+                    'SETTLEMENT_RECORD_PRESERVED': True}
+        if not delivery.get('result_submitted') and not delivery.get('results'):
+            return {'assignment_id': assignment_id, 'delivery_status': 'DELIVERY_NOT_SUBMITTED', 'read_only': True}
+        files = self.list_files(assignment_id).get('files', [])
+        # Names/IDs from the server are never interpreted as filesystem paths.
+        root = pathlib.Path(destination).expanduser().resolve()
+        root.mkdir(parents=True, exist_ok=True)
+        import tempfile
+        target = pathlib.Path(tempfile.mkdtemp(prefix='aix-delivery-', dir=root))
+        saved = []
         try:
-            listing = self._call("GET", "/v1/offers")
-        except AixError:
-            return None
-        offers = listing.get("offers", []) if isinstance(listing, dict) else listing
-        wanted_spec = payload.get("task_spec")
-        wanted_reward = str(payload.get("reward"))
-        for offer in offers or []:
-            if payload.get('acceptance_policy') is not None:
-                # A similar old task cannot prove the outcome of a new policy.
-                detail = self._call('GET', f"/v1/offers/{offer['offer_id']}")
-                contract = detail.get('acceptance_contract') or {}
-                if (detail.get('task_spec') != wanted_spec or
-                    contract.get('acceptance_policy') != payload['acceptance_policy'] or
-                    contract.get('rules') != payload['rules'] or
-                    detail.get('creator_agent_id') != self.agent_id):
-                    continue
-            if offer.get("creator_agent_id") not in (None, self.agent_id):
-                continue
-            if str(offer.get("reward")) != wanted_reward:
-                continue
-            # Duration is part of this create intent. An older otherwise
-            # matching offer with a different window cannot prove its outcome.
-            try:
-                actual_window = float(offer["claim_deadline"]) - float(offer["created_at"])
-                if not math.isfinite(actual_window) or abs(actual_window - payload["claim_window_seconds"]) > 0.001:
-                    continue
-            except (KeyError, TypeError, ValueError):
-                continue
-            if offer.get("task_spec_hash") and payload.get("task_spec_hash"):
-                if offer["task_spec_hash"] != payload["task_spec_hash"]:
-                    continue
-            elif isinstance(offer.get("task_spec"), dict) and isinstance(wanted_spec, dict):
-                if offer["task_spec"].get("title") != wanted_spec.get("title"):
-                    continue
-            if str(offer.get("status", "")).upper() in ("OPEN", "ACTIVE", "LEASED"):
-                offer = dict(offer)
-                offer["recovered"] = True
-                offer["outcome"] = RECOVERED_SUCCESS
-                return offer
+            for index, result in enumerate(delivery.get('results', [])):
+                body = (result.get('delivery') or {}).get('structured_output')
+                if body is not None:
+                    markdown = body if isinstance(body, str) else body.get('markdown') if isinstance(body, dict) else None
+                    name = target / (f'body-{index}.md' if isinstance(markdown, str) else f'body-{index}.json')
+                    name.write_text(markdown if isinstance(markdown, str) else json.dumps(body, ensure_ascii=False, indent=2), encoding='utf-8')
+                    saved.append({'saved_to': str(name)})
+            for index, file in enumerate(files):
+                digest = file.get('sha256')
+                if not digest:
+                    raise AixError(502, {'code': 'FILE_HASH_REQUIRED', 'message': 'Cannot verify attachment integrity.'})
+                downloaded = self.download_file(file['file_id'], str(target / f'attachment-{index}'),
+                             expected_sha256=digest, expected_size_bytes=file.get('size_bytes'))
+                saved.append({**downloaded, 'file_id': file['file_id'], 'original_filename': file.get('filename') or file.get('name')})
+            # Preserve the original metadata/structured answer alongside safe filenames.
+            (target / 'manifest.json').write_text(json.dumps({'submission': delivery, 'exports': saved},
+                ensure_ascii=False, indent=2), encoding='utf-8')
+        except BaseException:
+            # Only this newly-created private export directory is removed on partial failure.
+            import shutil
+            shutil.rmtree(target)
+            raise
+        return {'assignment_id': assignment_id, 'directory': str(target), 'files': saved,
+                'delivery_expires_at': delivery.get('delivery_expires_at'), 'read_only': True}
+
+    def _recover_offer(self, payload: dict) -> None:
+        """Payload similarity never proves which CREATE request committed.
+
+        Retained for old adapters; use create_task's durable-key replay instead.
+        """
         return None
 
     def read_delivery(self, assignment_id: str) -> dict[str, Any]:
@@ -1175,8 +1256,19 @@ class AixClient:
         rejects, pays or refunds. Honest work has no correctness verdict;
         historical contracts may return their existing frozen rule evaluation.
         """
-        return redact(self._call("GET",
-                                 f"/v1/assignments/{assignment_id}/submission"))
+        _require_assignment_id(assignment_id)
+        delivery=self._call('GET',f'/v1/assignments/{assignment_id}/submission')
+        if (not delivery.get('assurance') and delivery.get('offer_id')
+                and delivery.get('acceptance_contract_id')):
+            # Older compatible API deployments omit the newer assurance projection.
+            # Read the existing frozen offer, never infer semantics from null evaluation.
+            offer=self._call('GET','/v1/offers/'+delivery['offer_id'],auth=False)
+            contract=offer.get('acceptance_contract') or {}
+            if (contract.get('acceptance_contract_id')==delivery['acceptance_contract_id']
+                    and contract.get('schema_version')=='aix-honest-work-v0.9'):
+                delivery=dict(delivery,assurance='HONEST_WORK_NOT_CORRECTNESS_VERIFIED',
+                              can_approve=False,can_reject=False)
+        return redact(delivery)
 
     def review_delivery(self, assignment_id: str, decision: str, *,
                         reason: str | None = None) -> dict[str, Any]:
@@ -1385,3 +1477,8 @@ def contract_check(contract: dict) -> dict[str, Any]:
     }[shape]
     return {"result_shape": shape, "satisfiable": not problems,
             "problems": problems, "delivery_guidance": guidance}
+
+
+def _require_assignment_id(value):
+    if not isinstance(value,str) or not value.strip() or value.strip().lower() in ('none','null'):
+        raise AixError(400, {'code':'ASSIGNMENT_ID_REQUIRED','message':'assignment_id is required; query your assignments first'})

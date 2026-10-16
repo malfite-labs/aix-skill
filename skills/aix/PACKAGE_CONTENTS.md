@@ -1,31 +1,35 @@
-# AIX Skill v0.2.1 — Package Contents
+# AIX Skill — Package Contents
 
-The ZIP contains exactly25files under AIX-Skill-v0.2.1/. No tests, server, databases, identities or credentials are included. No installer executes on extraction.
+Read this list before executing anything. Every file, and why it exists.
 
 | File | Purpose |
 |---|---|
-| `AIX_PREPRODUCTION_NOTICE.md` | Release instructions, configuration or integrity metadata |
-| `AIX_SKILL_V0_1_RELEASE_MANIFEST.json` | Release instructions, configuration or integrity metadata |
-| `AIX_SKILL_V0_1_TRUST_MANIFEST.json` | Release instructions, configuration or integrity metadata |
-| `ARTICLE_ZERO.md` | Canonical ArticleZero1.0; accepted bytes unchanged |
-| `NETWORK_ACCESS.md` | Release instructions, configuration or integrity metadata |
-| `PACKAGE_CONTENTS.md` | Release instructions, configuration or integrity metadata |
-| `PERMISSIONS.md` | Release instructions, configuration or integrity metadata |
-| `README.md` | Release instructions, configuration or integrity metadata |
-| `SBOM.json` | No required dependencies; optional keyring is probed for actual availability |
-| `SECURITY.md` | Release instructions, configuration or integrity metadata |
-| `SHA256SUMS.txt` | Release instructions, configuration or integrity metadata |
-| `SHA256SUMS_SHA256` | Release instructions, configuration or integrity metadata |
-| `SKILL.md` | Release instructions, configuration or integrity metadata |
-| `VERSION` | Package version0.2.1 |
-| `aix_acceptance.py` | Existing legacy contract helpers; not a new honest_work validator |
-| `aix_article_zero.py` | Runtime module |
-| `aix_client.py` | Runtime module |
-| `aix_credentials.py` | Runtime module |
-| `aix_guidance.py` | Runtime module |
-| `aix_instructions.py` | Optional scoped native instructions; explicit permission required |
-| `aix_network.py` | Runtime module |
-| `aix_skill.py` | Runtime module |
-| `aix_welcome.py` | Runtime module |
-| `network_config.json` | Release instructions, configuration or integrity metadata |
-| `welcome.txt` | Release instructions, configuration or integrity metadata |
+| `SKILL.md` | Skill manifest and the instructions an Agent reads first |
+| `README.md` | Human-facing overview and quick start |
+| `SECURITY.md` | Threat model, credential model, uninstall, reporting |
+| `PERMISSIONS.md` | What the Skill may and may not do |
+| `NETWORK_ACCESS.md` | Every host it may contact, and whether credentials go there |
+| `PACKAGE_CONTENTS.md` | This file |
+| `AIX_PREPRODUCTION_NOTICE.md` | What Beta AIX is and is not worth |
+| `AIX_SKILL_V0_1_TRUST_MANIFEST.json` | Machine-readable trust facts |
+| `AIX_SKILL_V0_1_RELEASE_MANIFEST.json` | Version, build id, per-file digests |
+| `SBOM.json` | Dependencies, of which there are none |
+| `SHA256SUMS.txt` | Digests for integrity verification |
+| `SHA256SUMS_SHA256` | SHA256 of raw SHA256SUMS.txt bytes; not the downloadable ZIP digest |
+| `VERSION` | Authoritative semantic version of this package |
+| `aix_skill.py` | Facade: intent in, answer out; consent gates |
+| `aix_network.py`, `network_config.json` | Runtime network constants generated from the authoritative architecture MD/JSON in the release source commit |
+| `aix_client.py` | AIX public protocol client, one call per operation |
+| `aix_guidance.py` | Intents, natural-language matching, state machine |
+| `welcome.txt` | Sole UTF-8 robot welcome/menu drawing; preserve bytes |
+| `aix_welcome.py` | Pure welcome/final-response rendering; no install or economic actions |
+| `aix_credentials.py` | Credential storage tiers and redaction |
+| `tests/test_skill.py` | Unit tests. **Not required at runtime** — present so you can verify the implementation |
+
+Not included, deliberately: server source, database files, test identities,
+internal evidence, logs, or any credential.
+
+**No install script.** There is nothing to execute to install this. Unzip and
+add the directory to your Python path.
+
+PR3 source-only addition: `aix_instructions.py` prepares a scoped, permission-gated, idempotent native append. Existing immutable package digests/ZIP are not resealed or published in this PR.
