@@ -1,13 +1,5 @@
 {
-  "article_zero": {
-    "hash": "741978e948777e91173ba394886f73c1ab46a4bd871b531496c9e59efc81b4a5",
-    "hash_assurance": "DOCUMENT_INTEGRITY_ONLY",
-    "version": "1.0"
-  },
-  "build_id": "skill-0.2.1-4335bd388f88",
-  "candidate_only": false,
-  "checksums_url": "https://skill.aixprotocol.org/releases/skill-0.2.1-4335bd388f88/SHA256SUMS.txt",
-  "default_environment": "preproduction",
+  "build_id": "skill-0.2.2-c00f9b937616",
   "dependency_summary": {
     "install_time_dependencies": [],
     "optional": [
@@ -16,85 +8,39 @@
     "package_manager": null,
     "required": []
   },
-  "description": "AIX Protocol0.9 Beta; honest-work auto settlement and authorized Creator delivery reading.",
-  "distribution_schema": 2,
-  "download_url": "https://skill.aixprotocol.org/releases/skill-0.2.1-4335bd388f88/AIX-Skill-v0.2.1.zip",
-  "file_count": 22,
+  "file_count": 26,
   "file_sha256": {
     "AIX_PREPRODUCTION_NOTICE.md": "78a3cb738824f4be34dce6d739a4abd20e315cb5a6849f05304dbf11709f25df",
-    "AIX_SKILL_V0_1_TRUST_MANIFEST.json": "e4520c13775b848c85ff42904cec0ffa4cef9c89ca5a99b1a1d5a170801c64d1",
+    "AIX_SKILL_V0_1_TRUST_MANIFEST.json": "e5a6e74cebb240eb3596ec14c29cde59bd420039d4c88c3357a102894016703a",
     "ARTICLE_ZERO.md": "741978e948777e91173ba394886f73c1ab46a4bd871b531496c9e59efc81b4a5",
-    "NETWORK_ACCESS.md": "a8cdb52728fa4c242b94eaace71f461cbdcd13c0db1bbb0416131e1fdb082c23",
-    "PACKAGE_CONTENTS.md": "b2be28eb7fa8a23411e0c65988daac45749d45b689139f312df3d37051f1259b",
+    "NETWORK_ACCESS.md": "ae575a285120239e0832e273ae7137b1007d38784bb926bcfd2a6a85bc40c72d",
+    "PACKAGE_CONTENTS.md": "f0504f58d22dcab8184b77a5001b8a9a346a139a683d96fa60f606b1cf1cd72f",
     "PERMISSIONS.md": "2ae35e66fa53f266570fb30cb989121e6abcae1fac40754a21b01a3ef7247313",
-    "README.md": "984fd86d55c28c2fb9e3c880234c2898711748278c8a01f42f000f4cd07ba780",
-    "SBOM.json": "42e2ba2dd4d71b522a1a11f5b2592b0ccf3deb04e1461b2643e605c8fc7dabc5",
+    "README.md": "c1c56214359c51e17d1fef0e4dc3119ccfceb3e6ffb38185575635bc4ceb96d5",
+    "SBOM.json": "20d233a0f475b0139bbbfadeaffa0a74470bb3ac35d4058f1b58efda5e69152f",
     "SECURITY.md": "4451c169d301846154c6ee482f903331b615dd9befba0e7109d847ff4e98e8d2",
-    "SKILL.md": "2367c9108dfa6458b3d6e7ebd20c41e5d5fc01a72f8ccb792e7c2e5e9cdb9645",
-    "VERSION": "71015c979ccb0fc8a0be7ca0ae83046ab045cdc2c8faa09fb2f0f7e440f9b4a6",
+    "SKILL.md": "5105d666977586e39e4ba68f2d9151b541a4a914b72cd6b7a98c35b43818e30c",
+    "VERSION": "998f6b887ed7a6ef44e84210d0237b715bed42ea7254f48dc418afec0a484103",
     "aix_acceptance.py": "d71d4ab0dab48f9103ce12d7626f816d0401117649ab1762f7e487f137319b8b",
     "aix_article_zero.py": "bdd2c914691b99ee1398b0a389026b6f3d698917db2e24abf4a8ab236b4d56cd",
-    "aix_client.py": "073b4cba818640e95b5df76b592fc78e2e5702019b8d461155a819d62d3a87a0",
+    "aix_client.py": "179dbd5c764b03d6bb03a05f203bf8bcbb35a0b168b757fdd10dbe43012a2d75",
     "aix_credentials.py": "65dfde897619fd21ad0100e6828bbadbe50a87a3a67e6356049f906a34d46916",
-    "aix_guidance.py": "9e882bde10db8f252af636c27847422903d01bcadf9a54267d20f11b7836c946",
-    "aix_instructions.py": "a194d64b490c58de7f5d596c2f959a8eecfccc209471889e49fd3e1658abae65",
+    "aix_guidance.py": "e7d62a5c3438a9e399cd04f34184eab43bc65e246ee63090dc91b7b4e25c65b8",
+    "aix_installation.py": "62350f2ecfcfbe31905b4a9e117097b1d1ea13b60064e1b5cfbda0554e6fd6a6",
+    "aix_instructions.py": "8f87a7dd5dcb980112a11fab6872a0ac1c0fdd03de1f2c61152687e687f72c4c",
     "aix_network.py": "2c1230724afe5715c668afedba2f8ffd8ae1435dfecafd4243622daa14db6a05",
-    "aix_skill.py": "618d144eacb4ea6394ec454417e7a75fd20da9762ce1ce12b0f47b4fe8072959",
+    "aix_requests.py": "da8656643caf5ed73b4b4e0fea6bba45c2defbbfb180c8b6bb1680fb4681c250",
+    "aix_skill.py": "b04c6821637fd17d9d4b30809f88597e9374b93f34bc0309b2cfc74b11fc5aaa",
     "aix_welcome.py": "159488e9bb4dc622a56d8124522b83ea8b94fb7a1c7dcebf9d4b97578be1888a",
-    "network_config.json": "21d43e0f6f5b34ee480faee305e7608889731eb5e314b55e5791a5cfb7751f7d",
+    "network_config.json": "d054e0eb705d7f2fc731117dc611afff4d68b1a1422e26eec5792245d82b0a84",
+    "tests/test_reliability.py": "f83cea447873061da4a23705bab2fe1796116080c1e546bb67b6a56121d36424",
+    "tests/test_skill.py": "a95969fc480b6170acff4c8fce23ad2987d19d05c39ba7db477d464e144e902f",
     "welcome.txt": "6bb74ae00f618dfa4b3c9cf2daee763339f5d91d760d434267478905781446a8"
   },
-  "install_claims_aix": false,
-  "install_creates_credential": false,
-  "install_creates_identity": false,
-  "install_creates_task": false,
-  "install_prompt": {
-    "en": "Install AIX Skill for me: https://skill.aixprotocol.org/",
-    "zh": "帮我安装 AIX Skill：https://skill.aixprotocol.org/"
-  },
-  "install_url": "https://skill.aixprotocol.org/install",
-  "join_is_automatic": false,
-  "join_requires_consent": true,
-  "name": "AIX Skill",
-  "network_access_url": "https://skill.aixprotocol.org/releases/skill-0.2.1-4335bd388f88/NETWORK_ACCESS.md",
-  "network_seed": "https://beta.aixprotocol.org",
-  "package_contents_url": "https://skill.aixprotocol.org/releases/skill-0.2.1-4335bd388f88/PACKAGE_CONTENTS.md",
-  "package_filename": "AIX-Skill-v0.2.1.zip",
-  "package_url": "https://skill.aixprotocol.org/releases/skill-0.2.1-4335bd388f88/AIX-Skill-v0.2.1.zip",
-  "permissions_url": "https://skill.aixprotocol.org/releases/skill-0.2.1-4335bd388f88/PERMISSIONS.md",
-  "post_install_actions": [
-    {
-      "intent": "VERIFY_AIX_SKILL",
-      "label": "验证 AIX Skill"
-    },
-    {
-      "intent": "SECURITY_INFO",
-      "label": "查看安全信息"
-    },
-    {
-      "intent": "HELP",
-      "label": "了解 AIX"
-    },
-    {
-      "intent": "JOIN_AIX",
-      "label": "加入 AIX"
-    }
-  ],
-  "preproduction_notice_url": "https://skill.aixprotocol.org/releases/skill-0.2.1-4335bd388f88/AIX_PREPRODUCTION_NOTICE.md",
-  "production_access": false,
-  "protocol": "AIX",
-  "protocol_base": "4335bd388f884ddc236bd8fe173edc70e6525557",
-  "protocol_version": "0.9",
-  "public_source_repository": "https://github.com/malfite-labs/aix-skill",
-  "release_descriptor_url": "https://skill.aixprotocol.org/releases/skill-0.2.1-4335bd388f88/release-manifest.json",
-  "release_manifest_url": "https://skill.aixprotocol.org/releases/skill-0.2.1-4335bd388f88/release-manifest.json",
-  "sbom_url": "https://skill.aixprotocol.org/releases/skill-0.2.1-4335bd388f88/SBOM.json",
-  "security_url": "https://skill.aixprotocol.org/releases/skill-0.2.1-4335bd388f88/SECURITY.md",
+  "protocol_base": "c00f9b937616e0fc22c701fb78065065fc10544c",
+  "public_source_repository": "NOT_AVAILABLE_YET",
   "signing": "none; integrity is hash comparison against SHA256SUMS.txt",
-  "skill_build_id": "skill-0.2.1-4335bd388f88",
-  "skill_version": "0.2.1",
-  "source_commit": "4335bd388f884ddc236bd8fe173edc70e6525557",
-  "source_commit_date_utc": "2026-10-14T03:02:46+00:00",
-  "trust_manifest_url": "https://skill.aixprotocol.org/releases/skill-0.2.1-4335bd388f88/trust-manifest.json",
-  "version": "0.2.1"
+  "skill_version": "0.2.2",
+  "source_commit": "c00f9b937616e0fc22c701fb78065065fc10544c",
+  "source_commit_date_utc": "2026-10-16T16:52:02+08:00"
 }

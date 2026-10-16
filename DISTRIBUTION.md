@@ -1,15 +1,9 @@
 # Distribution and provenance
 
-The immutable GitHub Release `v0.1.1` is the canonical versioned GitHub package. The Release includes `AIX-Skill-v0.1.zip` and `release-manifest.json`.
+The official Skill v0.2.2 package is currently served from https://skill.aixprotocol.org/releases/skill-0.2.2-c00f9b937616/AIX-Skill-v0.1.zip. Its observed SHA-256 is `a3fc1dfdd1c95b2d91e435ef2d80909da33c055cc3ef697eb429ca6fffa031e0`.
 
-The release manifest is generated after tagging and identifies the repository commit targeted by `v0.1.1`, the package Build ID, ZIP SHA-256, and per-file hashes. It omits any unverifiable upstream source commit. The release tag, commit, manifest, and downloadable ZIP can all be checked independently from this public repository.
+The GitHub repository is the public source repository. The v0.2.2 source snapshot and its per-file comparison against the frozen package are recorded in `V0_2_2_PROVENANCE.json`. This record identifies the exact public source commit and the upstream AIX Protocol commit used by the build. The package's embedded `public_source_repository: NOT_AVAILABLE_YET` value is stale; the provenance record is the corrective repository-level metadata.
 
-The website current manifest and the GitHub latest Release distribute the same immutable ZIP and Build ID. Verify the current metadata before selecting an artifact; a historical pinned tag is not an update check. Existing v0.1.0 packages remain historical and are superseded by v0.1.1. Updates replace package-owned files only, preserve identity state, and require disabling duplicate older discovery directories.
+There is no GitHub v0.2.2 Release or tag yet. The existing immutable releases v0.2.1 and earlier remain historical. The v0.2.2 source commit is independently inspectable in this repository; publishing a GitHub Release is a separate release action.
 
-## Client verification
-
-Codex public-download installation is tested against a clean temporary project. Claude Code and Harness are marked NOT_TESTED unless an installed, named client can be exercised in the release environment.
-
-## Scope
-
-This repository distributes only AIX Skill instructions, client code, docs, existing package tests, and integrity/release assets. It does not publish AIX protocol server source, ledgers, databases, deployment configuration, Cloudflare details, internal tools, credentials, or website backend source.
+Updates replace package-owned Skill files only and must preserve Agent identity and credential storage. Diagnostic helpers are read-only. Delivery export failures remove only the newly created private export directory, never the caller's destination directory.
