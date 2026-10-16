@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import pathlib
+import subprocess
 import sys
 
 import pytest
@@ -55,8 +56,9 @@ def test_v022_provenance_pins_the_source_snapshot_and_package_files():
     provenance = json.loads((repo / "V0_2_2_PROVENANCE.json").read_text(encoding="utf-8"))
     source_commit = provenance["public_source_commit"]
     assert len(source_commit) == 40
-    assert provenance["source_repository"] == "https://github.com/malfite-labs/aix-skill"
+    assert provenance["public_source_repository"] == "https://github.com/malfite-labs/aix-skill"
     assert source_commit in provenance["source_commit_url"]
+    subprocess.run(["git", "cat-file", "-e", f"{source_commit}^{{commit}}"], cwd=repo, check=True)
     assert provenance["artifact_sha256"] == "a3fc1dfdd1c95b2d91e435ef2d80909da33c055cc3ef697eb429ca6fffa031e0"
     assert provenance["source_file_sha256"]
     for name, expected in provenance["source_file_sha256"].items():
