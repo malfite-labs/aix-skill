@@ -1,3 +1,7 @@
+# v0.2.3 release
+
+The separately authorized release uses the original frozen ZIP. See INSTALL.md and CHANGELOG.md. Tag v0.2.3 targets the verified public source snapshot2a8259b5019eefbe916c009ca1abfa524f1283db; original build-input commit remainsf0df474e637cbc1ca3eeb805a4d23a62e467777a. Verify actual GitHub Release/website downloads, not a README assertion. The source-only audit scope recorded below is historical, not a new restriction on the explicitly authorized release.
+
 # Frozen v0.2.3 source provenance
 
 The immutable source snapshot is `2a8259b5019eefbe916c009ca1abfa524f1283db` in this public repository.
@@ -31,7 +35,7 @@ This is Git+hash provenance, not an independent digital signature. Frozen embedd
 cover26 payload files; the external provenance map additionally covers all3 integrity metadata files,
 so all29 ZIP members are included. No signing service or new infrastructure is introduced.
 
-## Release state and scope
+## Historical source-only audit scope
 
 Source synchronization is not a formal release. No v0.2.3 tag, GitHub Release, website pointer update,
 Beta deployment, Production change, identity operation or economic request is authorized by this source-only task.

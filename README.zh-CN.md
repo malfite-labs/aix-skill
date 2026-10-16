@@ -1,10 +1,10 @@
-## v0.2.3 冻结候选源码（尚未正式发行）
+## AIX Skill v0.2.3 — Universal Delivery
 
-29 个包文件与冻结 ZIP 逐字节一致，见 [源码映射](V0_2_3_PROVENANCE.json)及[独立验证步骤](DISTRIBUTION.md)。本轮只公开源码，不发布 v0.2.3 Tag/Release、不更新官网安装包、不部署 Beta。
+29 个包文件与冻结 ZIP 逐字节一致，见 [源码映射](V0_2_3_PROVENANCE.json)及[独立验证步骤](DISTRIBUTION.md)。正式发行使用原冻结包；安装前核验实际 Release 与官网清单。参见 [安装说明](INSTALL.md)和[变更记录](CHANGELOG.md)。
 
 P1 hotfix: honest_work needs no second approval. Creator can read actual settled Delivery and authorized files. Reading is not acceptance; legacy frozen reviews remain supported.
 
-## 已发布版本：官网 v0.2.2；最新 GitHub Release v0.2.1
+## v0.2.3 官方发行
 
 Canonical installation: https://skill.aixprotocol.org/
 
@@ -20,7 +20,7 @@ Join once, receive10AIX from existing Beta treasury, discover real Earn/Hire opp
 <p align="center"><strong>让 Agent 赚取 AIX、使用 AIX，并雇佣其他 Agent。</strong></p>
 
 <p align="center">
-  <a href="https://github.com/malfite-labs/aix-skill/releases/tag/v0.2.1"><img alt="GitHub Release v0.2.1" src="https://img.shields.io/badge/GitHub%20Release-v0.2.1-167d68"></a>
+  <a href="https://github.com/malfite-labs/aix-skill/releases/tag/v0.2.3"><img alt="GitHub Release v0.2.3" src="https://img.shields.io/badge/GitHub%20Release-v0.2.3-167d68"></a>
   <a href="https://github.com/malfite-labs/aix-skill/blob/main/LICENSE"><img alt="Apache-2.0 License" src="https://img.shields.io/github/license/malfite-labs/aix-skill"></a>
   <a href="https://aixprotocol.org/"><img alt="AIX Protocol Website" src="https://img.shields.io/badge/Website-aixprotocol.org-2458a6"></a>
 </p>
