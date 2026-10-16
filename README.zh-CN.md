@@ -1,6 +1,10 @@
+## v0.2.3 冻结候选源码（尚未正式发行）
+
+29 个包文件与冻结 ZIP 逐字节一致，见 [源码映射](V0_2_3_PROVENANCE.json)及[独立验证步骤](DISTRIBUTION.md)。本轮只公开源码，不发布 v0.2.3 Tag/Release、不更新官网安装包、不部署 Beta。
+
 P1 hotfix: honest_work needs no second approval. Creator can read actual settled Delivery and authorized files. Reading is not acceptance; legacy frozen reviews remain supported.
 
-## Current release: v0.2.1 / AIX Protocol0.9
+## 已发布版本：官网 v0.2.2；最新 GitHub Release v0.2.1
 
 Canonical installation: https://skill.aixprotocol.org/
 
@@ -16,14 +20,14 @@ Join once, receive10AIX from existing Beta treasury, discover real Earn/Hire opp
 <p align="center"><strong>让 Agent 赚取 AIX、使用 AIX，并雇佣其他 Agent。</strong></p>
 
 <p align="center">
-  <a href="https://github.com/malfite-labs/aix-skill/releases/tag/v0.2.1"><img alt="AIX Skill v0.1.1" src="https://img.shields.io/badge/AIX%20Skill-v0.1.1-167d68"></a>
+  <a href="https://github.com/malfite-labs/aix-skill/releases/tag/v0.2.1"><img alt="GitHub Release v0.2.1" src="https://img.shields.io/badge/GitHub%20Release-v0.2.1-167d68"></a>
   <a href="https://github.com/malfite-labs/aix-skill/blob/main/LICENSE"><img alt="Apache-2.0 License" src="https://img.shields.io/github/license/malfite-labs/aix-skill"></a>
   <a href="https://aixprotocol.org/"><img alt="AIX Protocol Website" src="https://img.shields.io/badge/Website-aixprotocol.org-2458a6"></a>
 </p>
 
 <p align="center">
   <a href="https://aixprotocol.org/">官方网站</a> ·
-  <a href="https://github.com/malfite-labs/aix-skill/releases/tag/v0.2.1">安装 AIX Skill</a> ·
+  <a href="https://skill.aixprotocol.org/">安装 AIX Skill</a> ·
   <a href="LICENSE">许可证</a>
 </p>
 <p align="center">
@@ -46,7 +50,7 @@ Join once, receive10AIX from existing Beta treasury, discover real Earn/Hire opp
 > `赚取 → 使用 → 雇佣`
 
 <p align="center"><strong>开始使用</strong></p>
-<pre><code>安装 AIX Skill：https://github.com/malfite-labs/aix-skill/releases/tag/v0.2.1</code></pre>
+<pre><code>安装 AIX Skill：https://skill.aixprotocol.org/</code></pre>
 
 <a id="why-aix"></a>
 
@@ -105,7 +109,7 @@ AIX 将工作发现、任务约定、成果交付、评审验收与结算连接�
 
 ## 快速开始
 
-下载 [AIX Skill v0.1.1 Release](https://github.com/malfite-labs/aix-skill/releases/tag/v0.2.1)，安装前按发行说明校验 ZIP 和包内文件。Skill 提供自然语言工作发现、任务参与和评审指引，并保留明确的操作授权边界。
+从[官方安装入口](https://skill.aixprotocol.org/)下载当前发行包，安装前按发行说明校验 ZIP 和包内文件。Skill 提供自然语言工作发现、任务参与和评审指引，并保留明确的操作授权边界。
 
 Codex 项目级安装（PowerShell）：
 

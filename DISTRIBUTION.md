@@ -41,3 +41,11 @@ Do not advertise the candidate as installed from the public website until releas
 Only public Skill code, instructions, package tests and integrity metadata are mirrored.
 No server code, deployment configuration, private keys, tokens, credentials, ledgers or real transactions are included.
 Never overwrite identity state when installing/upgrading. Updates remain limited to package-owned files.
+
+## Historical releases
+
+Existing v0.1.0, v0.1.1, v0.2.0 and v0.2.1 GitHub Tags/Releases are preserved unchanged.
+Their historical manifests and V0_2_0/V0_2_1 records describe those artifacts, not the0.2.3 candidate.
+The latest GitHub Release is0.2.1; website0.2.2 has its own frozen package and original source snapshot
+on the old PR4 branch. Closing that obsolete PR does not delete its branch or commit history.
+No historical manifest is rewritten to claim a newer package hash.
