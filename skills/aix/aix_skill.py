@@ -27,6 +27,8 @@ from aix_guidance import (QUICK_ACTIONS, assess_state, guidance, match_intent,
                           PUBLIC_READ_INTENTS, explicit_current_intent)
 
 from aix_network import CANONICAL_BETA
+from aix_installation import loaded_source
+_AIX_LOADED_SOURCE = loaded_source(__file__)
 
 DEFAULT_BASE_URL = CANONICAL_BETA
 
@@ -394,7 +396,7 @@ class AixSkill:
                     "quick_actions": quick_actions(),
                     "guidance": self._guidance(assess_state(self.snapshot() if self.client.agent_id and self.client._api_key else {"registered":False}))}
         intent = action["id"]
-        if intent in ('WORK_TASK','RATE_WORKER','CREATE_TASK','SUBMIT_WORK','FIND_AND_WORK') and not explicit_current_intent(text,intent):
+        if intent in ('WORK_TASK','RATE_WORKER','CREATE_TASK','SUBMIT_WORK','UPLOAD_FILES','FIND_AND_WORK') and not explicit_current_intent(text,intent):
             return {'ok':False,'intent':intent,'stop':True,'code':'EXPLICIT_CURRENT_INTENT_REQUIRED',
                     'used_protocol':[],'authorization_boundary':dict(INTENT_BOUNDARY),
                     'message':'A question, suggestion, quotation or negation does not authorize this action.'}
@@ -726,6 +728,7 @@ class AixSkill:
                 'Install from https://skill.aixprotocol.org/; verify downloaded ZIP bytes against package_sha256 and per-file checksums. After activation, display welcome.txt in this chat. Installation does not Join AIX.'}
 
     def _i_install_diagnostic(self, **kw):
+        from aix_installation import installation_status
         directory = pathlib.Path(__file__).resolve().parent
         build = None
         try:
@@ -739,7 +742,8 @@ class AixSkill:
                 self.client.store.load(aid) for aid in self.client.store.agent_ids()))
         except Exception:
             available = "UNKNOWN"  # no backend exception or secret crosses diagnostics
-        return {"version": _package_version(), "build_id": build,
+        return {**installation_status(directory,check_public=kw.get('check_public',False)),
+                "version": _package_version(), "build_id": build,
                 "installation_location": str(directory),
                 "final_zip_sha256": "UNKNOWN (requires original immutable ZIP bytes)",
                 "sha256sums_sha256": _sha256sums_sha256(),
@@ -817,15 +821,20 @@ class AixSkill:
                 "summary": offer.get("summary") or offer.get("description"),
                 "hints": offer.get("hints") or offer.get("evidence_hints"),
                 "claim_deadline": offer.get("claim_deadline"),
+                "status":offer.get('status'),"available_slots":offer.get('available_slots'),
+                "execution_window_seconds":offer.get('execution_window_seconds'),
                 "acceptance": contract_summary(offer.get("acceptance_contract") or {}),
             })
         return {"total": market["total"], "offers": offers,
+                "returned_count":market.get('returned_count',len(offers)),
+                "complete":market.get('complete',False),"next_cursor":market.get('next_cursor'),
                 "final_response": ("当前没有可领取任务。" if not offers else "\n".join(
                     f"{i}. {(o.get('task') or {}).get('title', '标题未提供')}｜奖励 {o.get('reward', 'UNKNOWN')} AIX｜"
-                    f"领取截止 {o.get('claim_deadline') or 'UNKNOWN'}｜验收要求 "
+                    f"状态 {o.get('status')}｜可领名额 {o.get('available_slots')}｜领取截止 {o.get('claim_deadline') or 'UNKNOWN'}｜"
+                    f"领取后交付窗口 {o['execution_window_seconds']/3600 if o.get('execution_window_seconds') else 'UNKNOWN'} 小时｜契约 "
                     + ("；".join(r.get('requirement') or '要求未提供' for r in o['acceptance']['rules'] if r.get('required')) or "见任务详情")
                     for i, o in enumerate(offers, 1))) + ("\n回复任务编号查看详情。" if offers else ""),
-                "next_hint": "想接某个任务时，先说『查看任务详情』再『接这个任务』。"
+                "next_hint": "列表数量仅为本次返回可领取任务，不等于全部历史任务或本Agent均符合门槛；长期认领截止不延长领取后的交付窗口，仍须维持租约。想接某个任务时，先说『查看任务详情』再『接这个任务』。"
                              "领取之前应当先判断自己能否完成。",
                 "used_protocol": ["GET /v1/offers"]}
 
@@ -916,6 +925,8 @@ class AixSkill:
 
     def _i_task_progress(self, assignment_id: str = "", **kw):
         assignment_id = assignment_id or kw.get("assignment_id")
+        if not assignment_id:
+            return {'ok':False,'code':'ASSIGNMENT_ID_REQUIRED','message':'请提供 Assignment ID，或先查询我接到的任务。','used_protocol':[]}
         progress = self.client.task_progress(assignment_id)
         progress["stage"] = _stage_of(progress)
         submission = progress.get('submission') or {}
@@ -941,14 +952,19 @@ class AixSkill:
             return {'ok': False, 'code': 'INVALID_COMPLETION_STATUS', 'used_protocol': []}
         if status['completion_status'] in ('COMPLETED', 'PARTIALLY_COMPLETED') and not (
                 structured_output is not None or kw.get('structured_output') is not None
-                or artifacts or external_actions or evidence):
+                or artifacts or external_actions or evidence or kw.get('files')):
             return {'ok': False, 'code': 'COMPLETION_EVIDENCE_REQUIRED',
                     'message': '声称完成需要相应交付与证据；未验证时请使用 UNVERIFIED。',
                     'used_protocol': []}
         # The status is a declared local UX label, never a new API field or
         # an independent verification result. Actual evidence remains separate.
         assignment_id = assignment_id or kw.get("assignment_id")
+        if not assignment_id:
+            return {'ok':False,'code':'ASSIGNMENT_ID_REQUIRED','message':'请提供 Assignment ID，或先查询我接到的任务。','used_protocol':[]}
         output = structured_output if structured_output is not None else kw.get("structured_output")
+        if output is None and not (artifacts or external_actions or kw.get('files')):
+            return {'ok':False,'submitted':False,'code':'FILE_PATH_REQUIRED',
+                    'message':'请提供实际正文，或 files=[明确授权的文件路径]；不会扫描目录或提前结算。','used_protocol':[]}
         used = []
         shape = self._result_shape_for(assignment_id)
         if shape == "text" and output is not None and not isinstance(output, str):
@@ -964,22 +980,41 @@ class AixSkill:
                                "未提交，未改变任何状态。",
                     "used_protocol": [f"GET /v1/assignments/{assignment_id}"]}
         refs = list(artifacts or kw.get("artifacts") or [])
-        for path in kw.get("files") or []:
-            uploaded = self.client.upload_file(assignment_id, path)
-            refs.append(uploaded["artifact"])
-            used.append(f"POST /v1/assignments/{assignment_id}/files")
         result = self.client.submit_delivery(
             assignment_id, output,
             artifacts=refs or None,
             external_actions=external_actions or kw.get("external_actions"),
-            evidence=evidence or kw.get("evidence"))
+            evidence=evidence or kw.get("evidence"), files=kw.get('files'))
+        if result.get('submitted') is False:
+            return dict(result, ok=False, used_protocol=[f'GET/POST /v1/assignments/{assignment_id}/files'],
+                        message='附件尚未全部上传；已保存文件可复用。请修复失败路径后重试，未最终提交或付款。')
         return {"submitted": True, "result": redact(result),
+                **({'DELIVERY_SAVED': result['delivery_saved']} if 'delivery_saved' in result else {}),
+                **({'SETTLEMENT_STATUS': result['settlement_status']} if 'settlement_status' in result else {}),
+                **({'DELIVERY_EXPIRES_AT': result['delivery_expires_at']} if 'delivery_expires_at' in result else {}),
                 **status,
-                "note": "Delivery 提交后不可修改。文件可用 files=[路径] 上传到本任务（任意格式，"
-                        "单个 ≤25 MiB，仅双方与指定审核者可下载，哈希校验）；也可引用你自己"
-                        "托管的 URI。ExternalActionProof 需要你提供执行回执。",
-                "next": self._guidance(assess_state(self.snapshot())),
-                "used_protocol": used + [f"POST /v1/assignments/{assignment_id}/result"]}
+                "note": "有效交付自动结算，无需二次批准。原始交付不可改写；原 Worker 可在明确保留期内仅补交附件，不会再次付款或延长48小时保留期。合同要求文件时摘要或外部URL不能替代受管文件。",
+                "next": {'action':'READ_DELIVERY','assignment_id':assignment_id},
+                "used_protocol": used + ([f"GET/POST /v1/assignments/{assignment_id}/files"] if kw.get('files') else []) + [f"POST /v1/assignments/{assignment_id}/result"]}
+
+    def _i_upload_files(self, assignment_id='', files=None, **kw):
+        if not assignment_id:
+            return {'ok':False,'code':'ASSIGNMENT_ID_REQUIRED','message':'请指定原 Assignment；不会重新领取或注册。','used_protocol':[]}
+        result = self.client.upload_files(assignment_id, files)
+        return dict(result, ok=not result['failed'], submitted=False,
+                    message='只上传或追加附件，不触发提交、付款或保留期重置。',
+                    used_protocol=[f'GET/POST /v1/assignments/{assignment_id}/files'])
+
+    def _i_delivery_requirements(self, assignment_id='', **kw):
+        if not assignment_id:
+            return {'ok':False,'code':'ASSIGNMENT_ID_REQUIRED','read_only':True}
+        assignment = self.client._call('GET', f'/v1/assignments/{assignment_id}')
+        offer = self.client._call('GET', f"/v1/offers/{assignment['offer_id']}", auth=False)
+        policy = ((offer.get('acceptance_contract') or {}).get('honest_work') or {}).get('delivery_policy')
+        files = self.client.list_files(assignment_id).get('files', [])
+        return {'assignment_id':assignment_id,'delivery_policy':policy,'files':files,
+                'execution_deadline':assignment.get('execution_deadline'),'read_only':True,
+                'message':'按冻结格式准备完整正文/实际文件；这里只列已上传文件，不作质量判断。使用 files=[明确路径] 上传，全部成功后才最终提交。'}
 
     def _result_shape_for(self, assignment_id: str) -> str | None:
         """Best effort: the contract's delivery shape, or None if unknown."""
@@ -1020,7 +1055,13 @@ class AixSkill:
                 min_completed_jobs=kw.get('min_completed_jobs',int(jobs[0]) if jobs else 0),
                 claim_window_seconds=claim_window_seconds)
             self.client.remember_offer(offer.get('offer_id'),'creator')
+            policy = ((offer.get('acceptance_contract') or {}).get('honest_work') or {}).get('delivery_policy') or {}
             return {'created':True,'offer':redact(offer), 'payment_terms':offer.get('acceptance_contract',{}).get('honest_work'),
+                    'offer_id':offer.get('offer_id'),
+                    'result_guidance': '查看我的任务；查看哪些任务已经交付；读取完整成果或下载全部交付文件（提供本地目录）。Skill 自动查找各 Worker 的交付。',
+                    'retention_hours': policy.get('retention_hours'),
+                    'retention_notice': ('此任务交付成功保存后保留48小时，请在到期前下载；以实际交付返回的到期时间为准。'
+                                         if policy.get('version') in ('delivery-v1','delivery-v2') else '此任务未启用新版48小时保留规则；遵循原冻结合同，不推断到期时间。'),
                     'used_protocol':['POST /v1/offers']}
         window = validate_claim_window_seconds(claim_window_seconds)
         explicit_rules = rules or kw.get('rules')
@@ -1147,8 +1188,55 @@ class AixSkill:
                           '已结算交付可通过我的任务及 READ_DELIVERY 读取，不在此队列不代表没有交付。',
                 'used_protocol':['GET /v1/reviews/pending']}
 
-    def _i_read_delivery(self, assignment_id: str = "", **kw):
+    def _offer_assignment_ids(self, offer_id):
+        offer = self.client._call('GET', f'/v1/offers/{offer_id}')
+        return list(dict.fromkeys(slot['assignment_id'] for slot in offer.get('slots', [])
+                                  if slot.get('assignment_id')))
+
+    @staticmethod
+    def _retention_view(delivery):
+        if not delivery.get('delivery_status'):
+            return {}  # Legacy servers/contracts do not promise a new retention window.
+        expired = delivery['delivery_status'] == 'DELIVERY_EXPIRED'
+        expires = delivery.get('delivery_expires_at')
+        return {'DELIVERY_AVAILABLE': not expired,
+                'DELIVERY_EXPIRED': expired, 'DELIVERY_EXPIRES_AT': expires,
+                'DOWNLOAD_AVAILABLE': bool(delivery.get('download_available')) and not expired,
+                'retention_seconds_remaining': max(0, int(expires - time.time())) if expires else None,
+                **({'CONTENT_REMOVED': bool(delivery.get('content_removed')),
+                    'SETTLEMENT_RECORD_PRESERVED': True} if expired else {}),
+                'retention_notice': ('交付已到期；交易及结算记录保留。' if expired else
+                                     '请在到期前下载成果；读取不构成人工验收，不触发付款。')}
+
+    def _i_delivered_tasks(self, **kw):
+        listing = self._i_my_tasks()
+        items = []
+        for offer in listing.get('offers', []):
+            for aid in self._offer_assignment_ids(offer['offer_id']):
+                result = self._i_read_delivery(assignment_id=aid)
+                delivery = result.get('delivery') or {}
+                if delivery.get('result_submitted') or delivery.get('results') or delivery.get('delivery_status'):
+                    items.append({'offer_id': offer['offer_id'], 'assignment_id': aid, **result})
+        return {'items': items, 'count': len(items), 'complete': listing.get('complete', False),
+                'read_only': True, 'note': '每个 Worker 的交付独立展示；读取不是人工验收。'}
+
+    def _i_download_delivery(self, assignment_id='', offer_id='', destination=None, **kw):
+        if not destination:
+            return {'ok': False, 'code': 'DOWNLOAD_DESTINATION_REQUIRED', 'read_only': True,
+                    'message': '请指定获授权的本地下载目录；不会自动选择或覆盖现有文件。'}
+        ids = [assignment_id] if assignment_id else self._offer_assignment_ids(offer_id) if offer_id else []
+        if not ids:
+            return {'ok': False, 'code': 'OFFER_OR_ASSIGNMENT_ID_REQUIRED', 'read_only': True}
+        return {'downloads': [self.client.download_delivery(aid, destination) for aid in ids],
+                'read_only': True, 'note': '仅下载受管交付；外部 URL 不自动抓取。'}
+
+    def _i_read_delivery(self, assignment_id: str = "", offer_id: str = "", **kw):
         assignment_id = assignment_id or kw.get("assignment_id")
+        if not assignment_id and offer_id:
+            return {'offer_id': offer_id, 'deliveries': [self._i_read_delivery(assignment_id=aid)
+                    for aid in self._offer_assignment_ids(offer_id)], 'read_only': True}
+        if not assignment_id:
+            return {'ok':False,'code':'ASSIGNMENT_ID_REQUIRED','message':'请选择我的任务，或提供 Offer ID；Skill 会自动查找各 Worker 的交付。','used_protocol':[]}
         self.client.remember_assignment(assignment_id, "creator")
         try:
             delivery = self.client.read_delivery(assignment_id)
@@ -1159,7 +1247,7 @@ class AixSkill:
                               '不是平台不支持读取。请确认当前身份，不自动注册或替换凭据。',
                     'used_protocol':[f'GET /v1/assignments/{assignment_id}/submission']}
         honest = _honest_work_guidance(delivery)
-        return {"delivery": delivery,
+        return {"delivery": delivery, **self._retention_view(delivery),
                 'read_only':True,**({'review_required':False} if honest else {}),
                 "machine_evaluation": delivery.get("machine_evaluation")
                                       or delivery.get("evaluation"),

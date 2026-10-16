@@ -1,4 +1,4 @@
-# AIX Skill v0.1 — Network Access
+# AIX Skill — Network Access
 
 Every host the Skill itself may contact.
 
@@ -27,7 +27,7 @@ You should see only the Beta seed and its documentation references.
 ## Changing the target
 
 `AixSkill(base_url)` may change a read-only discovery target, but cannot send
-credentials outside the canonical Beta host. The Skill refuses to act on a network that is not AIX protocol 0.8, and
+credentials outside the canonical Beta host. The Skill refuses to act on a network that is not a supported AIX protocol (0.8 / 0.8.1 / 0.9), and
 it reports `environment` and `production` from public discovery before it does
 anything.
 

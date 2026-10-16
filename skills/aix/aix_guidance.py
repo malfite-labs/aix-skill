@@ -11,6 +11,8 @@ a client turns into a second source of truth.
 """
 from __future__ import annotations
 import re
+from aix_installation import loaded_source
+_AIX_LOADED_SOURCE = loaded_source(__file__)
 
 from typing import Any
 
@@ -26,7 +28,7 @@ INTENT_BOUNDARY = {
     "SUGGESTION_IS_NOT_AUTHORIZATION": True,
 }
 READ_INTENTS = frozenset({"BALANCE", "FIND_WORK", "READ_TASK", "TASK_PROGRESS",
-                          "MY_TASKS", "PENDING_REVIEWS", "READ_DELIVERY",
+                          "MY_TASKS", "PENDING_REVIEWS", "READ_DELIVERY", "DELIVERED_TASKS", "DOWNLOAD_DELIVERY", "DELIVERY_REQUIREMENTS",
                           "HELP", "VERIFY_AIX_SKILL", "SECURITY_INFO",
                           "VIEW_TASKS", "CREATE_TASK_MENU", "INSTALL_DIAGNOSTIC", "INSTALL_GUIDE", "BEGINNER_GUIDE"})
 PUBLIC_READ_INTENTS = frozenset({"HELP", "VERIFY_AIX_SKILL", "SECURITY_INFO", "INSTALL_DIAGNOSTIC", "INSTALL_GUIDE", "BEGINNER_GUIDE", "FIND_WORK", "DISCOVER_OPPORTUNITIES"})
@@ -46,7 +48,8 @@ def explicit_current_intent(text: str, intent: str) -> bool:
         'WORK_TASK': r'(执行这个任务|完成这个任务|workonthistask|completethistask)',
         'RATE_WORKER': r'(给这个worker打|评价这个任务|rateworker|ratethiswork)',
         'CREATE_TASK': r'(发布任务|发布一个任务|发布一项|创建任务|雇一个agent|雇agent|createatask|createtask|createanoffer|postatask|publishatask|publishtask|hireanagent)',
-        'SUBMIT_WORK': r'(提交任务|提交成果|提交工作|提交结果|提交delivery|交付|submit|deliverwork)',
+        'SUBMIT_WORK': r'(提交全部成果|提交这个任务的全部成果|提交图片|提交任务|提交成果|提交工作|提交结果|提交delivery|交付|submit|deliverwork)',
+        'UPLOAD_FILES': r'(上传文件|继续上传附件|补交刚才的图片|补交附件|uploadfiles|supplementattachments)',
         'FIND_AND_WORK': r'(找适合我的任务并完成|findsuitableworkandcompleteit)',
     }
     # A substring mention, question, quotation or negation is not authority.
@@ -78,7 +81,7 @@ QUICK_ACTIONS: tuple[dict[str, Any], ...] = (
     {"id": "BEGINNER_GUIDE", "label": "新手说明",
      "phrases": ["新手说明", "新手指南", "怎么玩 AIX", "如何使用 AIX"]},
     {"id": "CREATE_TASK_MENU", "label": "发任务", "phrases": ["发任务"]},
-    {"id": "VIEW_TASKS", "label": "查看任务", "phrases": ["查看任务"]},
+    {"id": "VIEW_TASKS", "label": "查看任务", "phrases": ["查看任务", "我的任务"]},
     {"id": "INSTALL_DIAGNOSTIC", "label": "安装诊断", "phrases": ["安装诊断", "查看版本", "查看校验信息", "安装在哪里"]},
     {"id": "REVOKE_CREDENTIAL", "label": "撤销凭据",
      "phrases": ["撤销凭据", "撤销密钥", "revoke credential", "revoke my key",
@@ -112,15 +115,17 @@ QUICK_ACTIONS: tuple[dict[str, Any], ...] = (
      "phrases": ["查看任务详情", "任务详情", "这个任务要做什么", "read task",
                  "task detail", "what does it require", "read task detail"]},
     {"id": "CLAIM_TASK", "label": "领取任务",
-     "phrases": ["接这个", "接这个任务", "领取这个任务", "claim this",
+     "phrases": ["接这个", "接这个任务", "领取任务", "领取这个任务", "claim this",
                  "take this task", "claim task", "take this",
                  "领取第二个任务", "再接一个任务", "接下一个任务"]},
     {"id": "TASK_PROGRESS", "label": "查看任务进度",
-     "phrases": ["查看进度", "查看任务进度", "我的任务", "任务进度", "task progress",
+     "phrases": ["查看进度", "查看任务进度", "任务进度", "task progress",
                  "my assignments", "check progress", "\u67e5\u770b\u7ed3\u7b97",
                  "\u67e5\u770b\u9a8c\u6536\u548c\u7ed3\u7b97\u72b6\u6001"]},
+    {'id':'UPLOAD_FILES','label':'上传或补交附件','phrases':['上传文件','继续上传附件','补交刚才的图片','补交附件','upload files','supplement attachments']},
+    {'id':'DELIVERY_REQUIREMENTS','label':'交付要求','phrases':['检查还缺少什么','查看交付格式要求','delivery requirements']},
     {"id": "SUBMIT_WORK", "label": "提交工作",
-     "phrases": ["提交任务", "提交成果", "提交工作", "提交结果", "交付", "提交delivery", "submit",
+     "phrases": ["提交全部成果", "提交这个任务的全部成果", "提交图片", "提交任务", "提交成果", "提交工作", "提交结果", "交付", "提交delivery", "submit",
                  "submit delivery", "deliver work", "submit work"]},
     {"id": "CREATE_TASK", "label": "发布任务",
      "phrases": ["发布任务", "发布一个任务", "发布一项", "我要发布任务", "雇一个agent",
@@ -134,8 +139,10 @@ QUICK_ACTIONS: tuple[dict[str, Any], ...] = (
                  "what needs my review"]},
     {"id": "OPEN_HUMAN_REVIEW", "label": "打开人工审核",
      "phrases": ["打开人工审核", "open human review"]},
+    {"id": "DELIVERED_TASKS", "label": "已交付任务", "phrases": ["查看哪些任务已经交付", "查看已交付任务", "show delivered tasks"]},
+    {"id": "DOWNLOAD_DELIVERY", "label": "下载交付", "phrases": ["下载任务图片", "下载最新补交文件", "下载全部交付成果", "下载某任务的全部交付文件", "下载全部交付文件", "下载交付", "download delivery"]},
     {"id": "READ_DELIVERY", "label": "查看交付",
-     "phrases": ["查看交付", "查看 Worker 交付", "查看已结算交付", "看看这个agent交了什么", "看看这个 agent 交了什么", "看交付",
+     "phrases": ["查看补充附件", "查看任务交付", "查看交付结果", "读取某任务的完整成果", "读取完整成果", "查看交付", "查看 Worker 交付", "查看已结算交付", "看看这个agent交了什么", "看看这个 agent 交了什么", "看交付",
                  "read delivery", "what did they deliver",
                  "这个agent交了什么"]},
     {"id": "ACCEPT_TASK", "label": "通过验收",
