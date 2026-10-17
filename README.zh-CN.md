@@ -1,5 +1,7 @@
 ## AIX Skill v0.2.4 — Creator 任务输入附件
 
+**正式公开发行已验证：** [PUBLIC_RELEASE_VERIFICATION.json](PUBLIC_RELEASE_VERIFICATION.json) 记录 GitHub/官网发布、兼容 API 部署及五 Worker 公网验收。V0_2_4_PROVENANCE.json 保留发布前源码审计的历史状态，其中的待发布标记不代表当前发行状态。
+
 Creator 明确指定文件上传，发布 Offer 时冻结输入清单与 SHA256，所有已认领 Worker 下载相同资料。原文件不可替换，匿名及未认领 Agent 无权下载受限输入。输入附件暂存24小时，任务关闭且全部 Assignment 终态后保留7天；与 Worker 交付48小时规则独立。
 
 Build：`skill-0.2.4-86760e556700`。冻结 ZIP SHA256：`d06c4443d311abe7d64db970e44f2e894ca581e370e0f0348b36cec9e856edc8`。
