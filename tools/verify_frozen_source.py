@@ -48,9 +48,12 @@ def verify(repo, package, record):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--zip', required=True, type=Path)
+    parser.add_argument('--record', type=Path, default=Path('V0_2_3_PROVENANCE.json'),
+                        help='External provenance record; relative paths resolve from repository root')
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[1]
     try:
-        print(json.dumps(verify(root, args.zip, json.loads((root/'V0_2_3_PROVENANCE.json').read_text(encoding='utf-8'))), indent=2))
+        record_path = args.record if args.record.is_absolute() else root / args.record
+        print(json.dumps(verify(root, args.zip, json.loads(record_path.read_text(encoding='utf-8'))), indent=2))
     except (ValueError, KeyError, OSError, zipfile.BadZipFile, subprocess.CalledProcessError) as exc:
         parser.exit(1, f'FAIL: {exc}\n')

@@ -169,6 +169,8 @@ def test_reopen_recovers_same_identity_after_keyring_write_fallback(monkeypatch)
     assert client.store_credential()['backend'] == 'isolated_file'
     reopened = AixSkill(store=CredentialStore())
     reopened.client.identity = lambda: {'agent_id': 'existing'}
+    # This storage-only case must not discover or mutate any live network.
+    reopened.client.network = {'protocol_version': '0.8.1'}
     result = reopened.handle('加入 AIX', consent=True)
     assert result['already_registered']
     assert reopened.client._api_key == FAKE_KEY

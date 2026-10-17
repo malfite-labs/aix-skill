@@ -396,7 +396,7 @@ class AixSkill:
                     "quick_actions": quick_actions(),
                     "guidance": self._guidance(assess_state(self.snapshot() if self.client.agent_id and self.client._api_key else {"registered":False}))}
         intent = action["id"]
-        if intent in ('WORK_TASK','RATE_WORKER','CREATE_TASK','SUBMIT_WORK','UPLOAD_FILES','FIND_AND_WORK') and not explicit_current_intent(text,intent):
+        if intent in ('WORK_TASK','RATE_WORKER','CREATE_TASK','SUBMIT_WORK','UPLOAD_FILES','UPLOAD_TASK_INPUTS','FIND_AND_WORK') and not explicit_current_intent(text,intent):
             return {'ok':False,'intent':intent,'stop':True,'code':'EXPLICIT_CURRENT_INTENT_REQUIRED',
                     'used_protocol':[],'authorization_boundary':dict(INTENT_BOUNDARY),
                     'message':'A question, suggestion, quotation or negation does not authorize this action.'}
@@ -888,7 +888,7 @@ class AixSkill:
         """An explicit work request acquires/starts its slot before host execution."""
         result = self._i_claim_task(offer_id=offer_id, **kw)
         return dict(result, work_ready=bool(result.get('claimed')),
-                    next='Perform the actual task, disclose limitations, then submit the delivery.')
+                    next='Read the frozen task input manifest after claiming; download to an explicit destination and verify SHA256 before actual work. Do not auto-unpack or execute attachments. Disclose limitations, then submit the actual delivery.')
 
     def _i_discover_opportunities(self, **kw):
         result = self.discover_opportunities(authorized_context=kw.get('authorized_context'),host_selection=kw.get('host_selection'))
@@ -1028,8 +1028,34 @@ class AixSkill:
             return None
 
     # --------------------------------------------------------------- creator
+    def _i_upload_task_inputs(self, input_files=None, files=None, **kw):
+        paths = input_files if input_files is not None else files
+        if not paths:
+            return {'ok':False, 'created':False, 'code':'FILE_PATH_REQUIRED', 'used_protocol':[],
+                    'message':'请提供 input_files=[明确的本地文件路径]；不会扫描目录。'}
+        result = self.client.upload_task_inputs(paths)
+        return dict(result, ok=not result['failed'], used_protocol=['GET /v1/input-files','POST /v1/input-files'],
+                    message='输入暂存24小时；只有成功发布绑定后才是任务输入。上传不提交交付、不结算。')
+
+    def _i_read_task_inputs(self, offer_id='', **kw):
+        if not offer_id:
+            return {'ok':False, 'code':'OFFER_ID_REQUIRED', 'used_protocol':[]}
+        manifest = self.client.list_task_inputs(offer_id)
+        return {'input_manifest':manifest, 'read_only':True, 'used_protocol':['GET /v1/offers/{offer_id}/input-files'],
+                'message':'所有已领取 Worker 使用同一冻结输入清单；以 SHA256 校验字节。输入保留至任务关闭且全部领取结束后7天。'}
+
+    def _i_download_task_inputs(self, offer_id='', destination='', **kw):
+        if not offer_id or not destination:
+            return {'ok':False, 'code':'OFFER_ID_REQUIRED' if not offer_id else 'DESTINATION_REQUIRED', 'used_protocol':[]}
+        return self.client.download_task_inputs(offer_id, destination)
+
     def _i_create_task(self, task_spec=None, reward: str | None = None, rules=None,
                        slot_count: int = 1, claim_window_seconds: int | None = None, **kw):
+        text = kw.get('_request_text', '')
+        if (any(word in text.lower() for word in ('附带', '数据包', '上传数据', 'attach input', 'upload data'))
+                and not kw.get('input_files') and not kw.get('input_file_ids')):
+            return {'ok':False, 'created':False, 'code':'FILE_PATH_REQUIRED', 'used_protocol':[],
+                    'message':'请明确提供 input_files=[本地文件路径] 或 input_file_ids；不会猜测附件位置或在缺少数据时发布。'}
         if getattr(self.client,'network',{}).get('protocol_version') == '0.9':
             import re
             text = kw.get('_request_text','')
@@ -1053,11 +1079,18 @@ class AixSkill:
             offer = self.client.create_task(task_spec or kw.get('task') or {'description':text},str(reward),
                 worker_slots=slots, min_rating=kw.get('min_rating',ratings[0] if ratings else 0),
                 min_completed_jobs=kw.get('min_completed_jobs',int(jobs[0]) if jobs else 0),
-                claim_window_seconds=claim_window_seconds)
+                claim_window_seconds=claim_window_seconds,
+                **{k:kw[k] for k in ('input_files','input_file_ids') if k in kw})
             self.client.remember_offer(offer.get('offer_id'),'creator')
             policy = ((offer.get('acceptance_contract') or {}).get('honest_work') or {}).get('delivery_policy') or {}
             return {'created':True,'offer':redact(offer), 'payment_terms':offer.get('acceptance_contract',{}).get('honest_work'),
                     'offer_id':offer.get('offer_id'),
+                    'input_artifacts':(offer.get('task_spec') or {}).get('input_artifacts'),
+                    'input_manifest_sha256':(offer.get('task_spec') or {}).get('input_manifest_sha256'),
+                    'input_retention':(offer.get('task_spec') or {}).get('input_retention'),
+                    'input_guidance':'查看这个任务的输入文件；领取后下载任务附件并验证 SHA256。不会自动解压或运行附件。',
+                    'input_retention_notice': ('未绑定输入暂存24小时；已绑定输入保留至任务关闭且全部 Assignment 终止，再保留7天。实际 cleanup_after 请稍后查看任务输入清单；不从发布时间推算。'
+                        if (offer.get('task_spec') or {}).get('input_artifacts') else '服务端未返回已绑定任务输入；请查看实际输入清单。'),
                     'result_guidance': '查看我的任务；查看哪些任务已经交付；读取完整成果或下载全部交付文件（提供本地目录）。Skill 自动查找各 Worker 的交付。',
                     'retention_hours': policy.get('retention_hours'),
                     'retention_notice': ('此任务交付成功保存后保留48小时，请在到期前下载；以实际交付返回的到期时间为准。'
@@ -1121,6 +1154,7 @@ class AixSkill:
              "required": True,
              "check": {"kind": "json_path_exists", "path": "$.answer"}}]
         options={'slot_count':slot_count,'claim_window_seconds':window}
+        options.update({k:kw[k] for k in ('input_files','input_file_ids') if k in kw})
         if policy is not None: options['acceptance_policy']=policy
         offer = self.client.create_task(task_spec, reward, rules, **options)
         self.client.remember_offer(offer.get("offer_id"), "creator")

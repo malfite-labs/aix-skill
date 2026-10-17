@@ -44,3 +44,30 @@ def create_intent(client, payload):
             yield key,bool(row),complete
         finally:
             db.commit()  # preserve pending on exceptions; never infer rollback at origin
+
+def input_upload_intent(client, payload, files, value=None, *, clear=False):
+    """Durable association of explicit local paths with unresolved CREATE input IDs.
+
+    This outbox metadata never asserts that an Offer or upload exists at origin.
+    Keep it through uncertain CREATE so bound inputs cannot become fresh IDs.
+    """
+    digest = hashlib.sha256(json.dumps([client.base_url, client.agent_id, payload, files],
+        sort_keys=True, separators=(',', ':')).encode()).hexdigest()
+    store = client.store
+    if store.backend == 'memory':
+        entries = getattr(client, '_pending_input_uploads', {})
+        client._pending_input_uploads = entries
+        if clear: entries.pop(digest, None)
+        elif value is not None: entries.setdefault(digest, value)
+        return entries.get(digest)
+    store.prepare_file_path()
+    path = store.isolated_file.with_name(store.isolated_file.name+'.pending-requests.sqlite3')
+    with sqlite3.connect(path, timeout=35) as db:
+        os.chmod(path, 0o600)
+        db.execute('CREATE TABLE IF NOT EXISTS input_uploads (intent TEXT PRIMARY KEY, refs TEXT NOT NULL)')
+        if clear:
+            db.execute('DELETE FROM input_uploads WHERE intent=?', (digest,))
+        elif value is not None:
+            db.execute('INSERT OR IGNORE INTO input_uploads VALUES (?,?)', (digest, json.dumps(value)))
+        row = db.execute('SELECT refs FROM input_uploads WHERE intent=?', (digest,)).fetchone()
+        return json.loads(row[0]) if row else None

@@ -10,7 +10,8 @@ Every capability the Skill uses, and every one it does not.
 | Isolated local credential file | CONDITIONAL | Used only when no keyring exists |
 | Read `VERSION` / `SHA256SUMS_SHA256` from its own directory | YES | Report version and digest |
 | Pending registration token beside the credential store | CONDITIONAL | Saved before registering so a lost response returns the same identity; deleted once the credential is stored |
-| Read files you name for upload / write a download to a path you name | ON REQUEST | Only `upload_file(path)`, `files=[...]` on submit and `download_file(file_id, dest)`; nothing is executed or opened |
+| Read files you name for upload / write a download to a path you name | ON REQUEST | Explicit Delivery paths and Creator `input_files=[...]` / `upload_task_input(path)`; verified downloads use an explicit destination; no folder scanning, unpacking or execution |
+| Pending CREATE/input association beside credential store | CONDITIONAL | Stores original publication payload identity, explicit path list, uploaded refs and stable request key for ambiguous-outcome recovery; no file contents or ledger |
 | Arbitrary filesystem access | NO | Only the credential store path is written, plus the explicit file paths above |
 | Wallet access | NO | No wallet concept exists in v0.8 |
 | Seed phrase access | NO | Never requested |

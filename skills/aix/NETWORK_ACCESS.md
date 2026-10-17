@@ -37,3 +37,9 @@ Discovery, `verify this Skill`, `security information`, and browsing the public
 market are read-only and send no economic instruction. Registration, bootstrap
 claim, offer creation, claim, submission, review and settlement are mutations
 and all require an explicit intent or consent.
+
+Task input staging uses authenticated POST /v1/input-files (explicit raw bytes)
+and GET /v1/input-files (own available staged refs). Authorized Creator/claimed
+Worker reads GET /v1/offers/{offer_id}/input-files and GET /v1/files/{file_id}.
+Input upload is a storage mutation requiring current explicit intent; it never
+submits Delivery or settles. All routes use the same credential host scope.

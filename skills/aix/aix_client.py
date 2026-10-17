@@ -992,7 +992,10 @@ class AixClient:
                     assignment_mode: str | None = None,
                     claim_window_seconds: int | None = None,
                     acceptance_policy: dict | None = None, worker_slots: int | None = None,
-                    min_rating: str | float = 0, min_completed_jobs: int = 0) -> dict[str, Any]:
+                    min_rating: str | float = 0, min_completed_jobs: int = 0,
+                    input_files: list[str] | None = None, input_file_ids: list[str] | None = None) -> dict[str, Any]:
+        if any(key in task_spec for key in ('input_artifacts', 'input_manifest_sha256', 'input_retention')):
+            raise AixError(422, {'code':'SERVER_INPUT_FIELDS_RESERVED', 'message':'Supply input_files or input_file_ids; the server freezes the manifest.'})
         window = validate_claim_window_seconds(claim_window_seconds)
         rules = rules or []
         for rule in rules:
@@ -1032,6 +1035,29 @@ class AixClient:
             self._auto_restore()
         if not self.agent_id:
             raise AixError(401, {'code':'UNAUTHORIZED','message':'Restore an existing identity before creating a task'})
+        association = None
+        if input_file_ids is not None:
+            if not isinstance(input_file_ids, list) or len(input_file_ids) > 64 or any(not isinstance(i,str) or not i for i in input_file_ids):
+                raise AixError(422, {'code':'INPUT_FILE_IDS_INVALID', 'message':'Provide at most 64 input file IDs.'})
+            payload['input_file_ids'] = list(input_file_ids)
+        if input_files is not None:
+            from aix_requests import input_upload_intent
+            if not isinstance(input_files, (list,tuple)) or not input_files or len(input_files) > 64:
+                raise AixError(422, {'code':'INPUT_FILES_REQUIRED', 'message':'Provide 1 to 64 explicit input file paths.'})
+            # Logical publication identity uses explicit paths, not their current
+            # contents. A pending CREATE must replay its original frozen refs
+            # even after the local file is edited or removed.
+            association = (dict(payload), list(input_files))
+            saved = input_upload_intent(self, *association)
+            if saved is None:
+                uploads = self.upload_task_inputs(input_files)
+                if uploads['failed']:
+                    raise AixError(422, {'code':uploads['code'], 'message':'Input upload incomplete; task was not created.', 'details':uploads})
+                saved = uploads['saved']
+                saved = input_upload_intent(self, *association, value=saved)
+            payload['input_file_ids'] = list(payload.get('input_file_ids', [])) + [f['file_id'] for f in saved]
+            if len(payload['input_file_ids']) > 64:
+                raise AixError(422, {'code':'INPUT_FILE_IDS_INVALID', 'message':'Combined input count exceeds 64.'})
         with create_intent(self,payload) as (key,pending,complete):
             if pending:
                 # Read origin state FIRST. Never retry if reconciliation itself fails.
@@ -1049,7 +1075,9 @@ class AixClient:
             complete()
             if pending:
                 result=dict(result,recovered=True,outcome=RECOVERED_SUCCESS)
-            return result
+        if association is not None:
+            input_upload_intent(self, *association, clear=True)
+        return result
 
     def rate_settlement(self, settlement_id: str, stars: int) -> dict[str, Any]:
         _, result = self._mutate('rate_settlement', 'POST', f'/v1/settlements/{settlement_id}/rating', {'stars':stars})
@@ -1091,6 +1119,107 @@ class AixClient:
         result = dict(result)
         result.setdefault("result_shape", shape)
         return result
+
+    # ----------------------------------------------------- task input files
+    def list_staged_task_inputs(self) -> dict[str, Any]:
+        return self._call('GET', '/v1/input-files')
+
+    def list_task_inputs(self, offer_id: str) -> dict[str, Any]:
+        if not isinstance(offer_id, str) or not offer_id.strip():
+            raise AixError(422, {'code':'OFFER_ID_REQUIRED', 'message':'Provide the task offer_id.'})
+        return self._call('GET', f'/v1/offers/{offer_id}/input-files')
+
+    @staticmethod
+    def _task_input_bytes(path):
+        if not isinstance(path, str) or not path:
+            raise AixError(422, {'code':'FILE_PATH_REQUIRED', 'message':'Provide explicit input file paths; no directories are scanned.'})
+        source = pathlib.Path(path)
+        if not source.is_file():
+            raise AixError(422, {'code':'LOCAL_FILE_UNREADABLE', 'message':f'Input file does not exist: {path}'})
+        # Read at most the per-file limit plus one byte, including files growing during read.
+        with source.open('rb') as stream:
+            content = stream.read(25 * 1024 * 1024 + 1)
+        if len(content) > 25 * 1024 * 1024:
+            raise AixError(422, {'code':'INPUT_FILE_TOO_LARGE', 'message':'Task inputs are limited to 25 MiB per file.'})
+        return content, source.name
+
+    def upload_task_input(self, path: str) -> dict[str, Any]:
+        """Stage explicit bytes; reconcile a lost upload response before retrying."""
+        content, name = self._task_input_bytes(path)
+        digest = 'sha256:' + hashlib.sha256(content).hexdigest()
+        def checked(found):
+            if found.get('sha256') != digest or found.get('size_bytes') != len(content):
+                raise AixError(502, {'code':'UPLOAD_HASH_MISMATCH', 'message':'Do not attach an input with different stored bytes.', 'details':{'saved':found}})
+            return found
+        def existing():
+            return next((f for f in self.list_staged_task_inputs().get('files', [])
+                         if f.get('filename') == name and f.get('sha256') == digest
+                         and f.get('size_bytes') == len(content) and f.get('available', True)), None)
+        found = existing()
+        if found:
+            return dict(checked(found), recovered=True, idempotent_replay=True)
+        try:
+            status, result = self._request('POST', '/v1/input-files', raw_body=content,
+                                          query={'name':name, 'media_type':'application/octet-stream'})
+            if status >= 500:
+                raise AixError(status, result)
+        except AixError as exc:
+            if exc.code not in UNCERTAIN_ERRORS and exc.status != 0 and exc.status < 500:
+                raise
+            try: found = existing()
+            except AixError: found = None
+            if found:
+                return dict(checked(found), recovered=True, idempotent_replay=True)
+            raise AmbiguousOutcome('Input upload outcome unknown; query staged task inputs before retry.',
+                                   'upload_task_input', json.dumps({'filename':name,'sha256':digest})) from exc
+        if status >= 400:
+            raise AixError(status, result if isinstance(result, dict) else {})
+        return checked(result)
+
+    def upload_task_inputs(self, files: list[str]) -> dict[str, Any]:
+        if not isinstance(files, (list, tuple)) or not files or len(files) > 64:
+            raise AixError(422, {'code':'INPUT_FILES_REQUIRED', 'message':'Provide 1 to 64 explicit input file paths.'})
+        # Validate aggregate bytes before any upload; unreadable individual paths
+        # remain visible as partial results rather than hiding already saved files.
+        total = 0
+        for path in files:
+            try: total += len(self._task_input_bytes(path)[0])
+            except (OSError, AixError, ValueError): pass
+        if total > 256 * 1024 * 1024:
+            raise AixError(422, {'code':'INPUT_TOTAL_TOO_LARGE', 'message':'Task input total is limited to 256 MiB.'})
+        saved, failed = [], []
+        for path in files:
+            try: saved.append(self.upload_task_input(path))
+            except (AixError, OSError, ValueError) as exc:
+                failed.append({'path':path, 'code':exc.code if isinstance(exc,AixError) else 'LOCAL_FILE_UNREADABLE', 'message':str(exc)})
+        code = 'UPLOAD_PARTIAL' if saved and failed else 'UPLOAD_FAILED' if failed else 'UPLOAD_SAVED'
+        return {'code':code, 'upload_status':code, 'saved':saved, 'failed':failed, 'money_moved':'0',
+                'staging_hours':24, 'created':False}
+
+    def download_task_inputs(self, offer_id: str, destination: str) -> dict[str, Any]:
+        if not isinstance(destination, str) or not destination.strip():
+            raise AixError(422, {'code':'DESTINATION_REQUIRED', 'message':'Provide a local download directory.'})
+        manifest = self.list_task_inputs(offer_id)
+        root = pathlib.Path(destination).expanduser().resolve()
+        root.mkdir(parents=True, exist_ok=True)
+        import tempfile, shutil
+        target = pathlib.Path(tempfile.mkdtemp(prefix='aix-task-inputs-', dir=root))
+        saved = []
+        try:
+            for index, file in enumerate(manifest.get('files', [])):
+                if not file.get('sha256') or not isinstance(file.get('size_bytes'), int):
+                    raise AixError(502, {'code':'FILE_HASH_REQUIRED', 'message':'Frozen input hash and size are required.'})
+                item = self.download_file(file['file_id'], str(target / f'input-{index}'),
+                    expected_sha256=file['sha256'], expected_size_bytes=file['size_bytes'])
+                saved.append(dict(item, original_filename=file.get('filename')))
+            (target / 'manifest.json').write_text(json.dumps({'input_manifest':manifest, 'exports':saved},
+                ensure_ascii=False, indent=2), encoding='utf-8')
+        except BaseException:
+            shutil.rmtree(target)
+            raise
+        return {'offer_id':offer_id, 'directory':str(target), 'files':saved, 'read_only':True,
+                'input_manifest_sha256':manifest.get('input_manifest_sha256'),
+                'input_retention':manifest.get('input_retention')}
 
     # ----------------------------------------------------- delivery files
     def upload_file(self, assignment_id: str, path: str | None = None, *,
