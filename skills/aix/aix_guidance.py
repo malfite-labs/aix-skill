@@ -27,7 +27,7 @@ INTENT_BOUNDARY = {
     "BOOTSTRAP_REQUIRES_EXPLICIT_CURRENT_INTENT": True,
     "SUGGESTION_IS_NOT_AUTHORIZATION": True,
 }
-READ_INTENTS = frozenset({"BALANCE", "FIND_WORK", "READ_TASK", "TASK_PROGRESS",
+READ_INTENTS = frozenset({"READ_TASK_INPUTS", "DOWNLOAD_TASK_INPUTS","BALANCE", "FIND_WORK", "READ_TASK", "TASK_PROGRESS",
                           "MY_TASKS", "PENDING_REVIEWS", "READ_DELIVERY", "DELIVERED_TASKS", "DOWNLOAD_DELIVERY", "DELIVERY_REQUIREMENTS",
                           "HELP", "VERIFY_AIX_SKILL", "SECURITY_INFO",
                           "VIEW_TASKS", "CREATE_TASK_MENU", "INSTALL_DIAGNOSTIC", "INSTALL_GUIDE", "BEGINNER_GUIDE"})
@@ -45,10 +45,11 @@ def explicit_current_intent(text: str, intent: str) -> bool:
     if intent in EXPLICIT_IDENTITY_INTENTS:
         return normalized in EXPLICIT_IDENTITY_INTENTS[intent]
     patterns = {
-        'WORK_TASK': r'(执行这个任务|完成这个任务|workonthistask|completethistask)',
+        'WORK_TASK': r'(开始基于这份数据回测|执行这个任务|完成这个任务|workonthistask|completethistask)',
         'RATE_WORKER': r'(给这个worker打|评价这个任务|rateworker|ratethiswork)',
         'CREATE_TASK': r'(发布任务|发布一个任务|发布一项|创建任务|雇一个agent|雇agent|createatask|createtask|createanoffer|postatask|publishatask|publishtask|hireanagent)',
         'SUBMIT_WORK': r'(提交全部成果|提交这个任务的全部成果|提交图片|提交任务|提交成果|提交工作|提交结果|提交delivery|交付|submit|deliverwork)',
+        'UPLOAD_TASK_INPUTS': r'(上传任务数据|上传任务输入|uploadtaskinputs)',
         'UPLOAD_FILES': r'(上传文件|继续上传附件|补交刚才的图片|补交附件|uploadfiles|supplementattachments)',
         'FIND_AND_WORK': r'(找适合我的任务并完成|findsuitableworkandcompleteit)',
     }
@@ -73,9 +74,12 @@ def explicit_current_intent(text: str, intent: str) -> bool:
 
 #: Every user intent, in the order a new Agent is likely to need them.
 QUICK_ACTIONS: tuple[dict[str, Any], ...] = (
+    {'id':'READ_TASK_INPUTS','label':'查看任务输入','phrases':['查看这个任务的输入文件','确认五个Agent使用相同数据','查看任务数据','查看任务输入','read task inputs']},
+    {'id':'DOWNLOAD_TASK_INPUTS','label':'下载任务输入','phrases':['下载任务附件','下载任务输入','验证原始数据SHA256','download task inputs']},
+    {'id':'UPLOAD_TASK_INPUTS','label':'上传任务数据','phrases':['上传任务数据','上传任务输入','upload task inputs']},
     {'id':'FIND_AND_WORK','label':'找任务并完成','phrases':['找适合我的任务并完成','find suitable work and complete it']},
     {'id':'DISCOVER_OPPORTUNITIES','label':'EARN / HIRE','phrases':['发现机会','discover opportunities']},
-    {'id':'WORK_TASK','label':'执行任务','phrases':['执行这个任务','完成这个任务','work on this task','complete this task']},
+    {'id':'WORK_TASK','label':'执行任务','phrases':['开始基于这份数据回测','执行这个任务','完成这个任务','work on this task','complete this task']},
     {'id':'RATE_WORKER','label':'评分','phrases':['给这个 Worker 打','给这个worker打','评价这个任务','rate worker','rate this work']},
     {"id": "INSTALL_GUIDE", "label": "安装 AIX Skill", "phrases": ["安装 AIX Skill", "安装aixskill"]},
     {"id": "BEGINNER_GUIDE", "label": "新手说明",
